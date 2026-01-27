@@ -8,6 +8,8 @@ __pycache__/
 # Virtual env
 venv/
 .venv/
+# Ignore all output files
+outputs/*
 
-# Output files (optional – remove if you want outputs in git)
-outputs/
+# Keep folder structure
+!outputs/.gitkeep
