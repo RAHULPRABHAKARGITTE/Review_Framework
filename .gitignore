@@ -1,0 +1,13 @@
+# PyCharm
+.idea/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual env
+venv/
+.venv/
+
+# Output files (optional – remove if you want outputs in git)
+outputs/
