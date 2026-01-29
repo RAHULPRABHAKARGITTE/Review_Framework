@@ -8,14 +8,14 @@ from g7.main_g7 import run_g7
 def main():
     print("Starting Review Framework...")
 
+    run_g1()
+    print("G1 review completed.\n")
+
     run_g3()
     print("G3 review completed.\n")
 
     run_g4()
     print("G4 review completed.\n")
-
-    run_g1()
-    print("G1 review completed.\n")
 
     run_g5()
     print("G5 review completed.\n")

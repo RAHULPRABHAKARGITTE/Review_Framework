@@ -101,6 +101,261 @@ class G1Config:
         "interval": ["rate", "frequency"]
     }
 
+    """
+    config.py
+
+    Central configuration for G1 Review Tool.
+    This file defines constants, patterns, and review templates only.
+    NO logic must be implemented here.
+    """
+
+    # ============================================================
+    # GLOBAL RESULT STATES
+    # ============================================================
+
+    PASS = "PASS"
+    FAIL = "FAIL"
+    REVIEW = "REVIEW"   # requires human review (LLM-assisted)
+
+    # ============================================================
+    # DOMAIN-SPECIFIC FUNCTIONAL ELEMENT KEYWORDS
+    # (Used for G1.1 functional alignment checks)
+    # ============================================================
+
+    MONITOR_KEYWORDS = [
+        "lvdt",
+        "asa",
+        "ehsv",
+        "target input",
+        "over angle",
+        "steering angle",
+        "watchdog",
+        "rom test",
+        "ram integrity",
+        "rigging",
+        "aircraft information"
+    ]
+
+    # ============================================================
+    # G1.1 – COMPLIANCE CHECK CATEGORIES
+    # ============================================================
+
+    G1_1_CHECK_TYPES = [
+        "TRACEABILITY_MISSING",
+        "TRACEABILITY_EXTRA",
+        "NUMERIC_MISMATCH",
+        "COMPARATOR_MISMATCH",
+        "BOOLEAN_POLARITY_MISMATCH",
+        "CONDITION_MISSING",
+        "CONDITION_EXTRA",
+        "POTENTIAL_LOGIC_DRIFT"
+    ]
+
+    # ============================================================
+    # NUMERIC & LOGICAL EXTRACTION PATTERNS
+    # (Used by deterministic + LLM-assisted layers)
+    # ============================================================
+
+    # Comparison operators expected in requirements
+    COMPARISON_OPERATORS = [
+        "<",
+        "<=",
+        ">",
+        ">=",
+        "="
+    ]
+
+    # Boolean polarity keywords
+    BOOLEAN_POSITIVE_TERMS = [
+        "shall",
+        "must",
+        "enabled",
+        "allowed",
+        "active"
+    ]
+
+    BOOLEAN_NEGATIVE_TERMS = [
+        "shall not",
+        "must not",
+        "disabled",
+        "not allowed",
+        "inactive"
+    ]
+
+    # Conditional keywords
+    CONDITION_KEYWORDS = [
+        "if",
+        "when",
+        "only when",
+        "unless",
+        "while",
+        "after",
+        "before"
+    ]
+
+    # ============================================================
+    # STATE / MODE LANGUAGE (STRUCTURAL ONLY)
+    # ============================================================
+
+    STATE_KEYWORDS = [
+        "state",
+        "mode",
+        "transition",
+        "enter",
+        "exit"
+    ]
+
+    # ============================================================
+    # G1.2 – CLARITY (VAGUENESS)
+    # ============================================================
+
+
+    G1_2_VAGUE_TERMS = [
+        "user friendly", "fast", "adequate", "sufficient",
+        "as appropriate", "if possible", "etc", "where necessary",
+        "as needed", "approximately", "as required", "normally", "generally"
+    ]
+
+
+    # ============================================================
+    # STANDARD REVIEW COMMENTS (DO NOT HARD-CODE IN LOGIC)
+    # ============================================================
+
+    COMMENTS = {
+        "TRACEABILITY_MISSING":
+            "System requirement is not fully reflected in software requirements.",
+
+        "TRACEABILITY_EXTRA":
+            "Software requirement introduces behavior not requested at system level.",
+
+        "NUMERIC_MISMATCH":
+            "Numeric values differ between system and software requirements.",
+
+        "COMPARATOR_MISMATCH":
+            "Comparison operators differ between system and software requirements.",
+
+        "BOOLEAN_POLARITY_MISMATCH":
+            "The system and the software specify opposite logical outcomes or defaults for the same behavior.",
+
+        "CONDITION_MISSING":
+            "Condition stated at system level is missing at software level.",
+
+        "CONDITION_EXTRA":
+            "Software introduces additional conditions not stated at system level.",
+
+        "POTENTIAL_LOGIC_DRIFT":
+            "Potential semantic or logical deviation detected; review required.",
+
+        "VAGUE_WORDING":
+            "Requirement contains vague or non-verifiable wording.",
+
+        "INCOMPLETE_SYSTEM_COVERAGE":
+            "System behavior not fully covered in software requirements.",
+
+        "STATE_DIAGRAM_MISMATCH" : "State machine behavior differs between system and software.",
+
+        "LLM_ERROR" : "LLM explanation failed."
+    }
+
+    # ============================================================
+    # LLM INTEGRATION CONTROL (REVIEW ASSIST ONLY)
+    # ============================================================
+
+    LLM_ENABLED = True          # must be switchable
+    LLM_MODE = "ASSIST"        # ASSIST | OFF
+    LLM_MAX_TOKENS = 800
+
+    # LLM is NOT allowed to decide PASS/FAIL
+    LLM_ALLOWED_RESULTS = [
+        "ALIGNED",
+        "PARTIAL",
+        "MISALIGNED"
+    ]
+
+    # ============================================================
+    # REFINEMENT CLASSIFICATION (SECOND TIER)
+    # ============================================================
+
+    REFINEMENT_ACCEPTABLE = "ACCEPTABLE_REFINEMENT"
+    REFINEMENT_UNACCEPTABLE = "UNACCEPTABLE_DRIFT"
+    REFINEMENT_NONE = "NOT_APPLICABLE"
+
+    # ============================================================
+    # G1.2 – CLARITY FOR COMPLIANCE (KEYWORDS ONLY)
+    # ============================================================
+
+    # G1_2_VAGUE_TERMS = [
+    #     "approximately",
+    #     "as appropriate",
+    #     "as required",
+    #     "if possible",
+    #     "normally",
+    #     "generally",
+    #     "where necessary",
+    #     "as needed"
+    #     "adequate",
+    #     "sufficient"
+    # ]
+
+    G1_2_AMBIGUOUS_REFERENCES = [
+        "this value",
+        "that value",
+        "the above",
+        "the below",
+        "as mentioned earlier",
+        "as above",
+        "as below",
+        "former",
+        "latter",
+        "same as above",
+        #"following"
+    ]
+
+    # ============================================================
+    # G1.2 / G2 – INTENT TAXONOMY
+    #❗ FAIL here does NOT mean intent mismatch - It means intent match but behavior conflict exists elsewhere
+    # ============================================================
+
+    INTENT_GROUPS = {
+        # Safety enforcement
+        "FAILSAFE": [
+            "failsafe", "safe state", "shutdown", "disable", "inhibit",
+            "prevent operation", "block operation"
+        ],
+
+        # Recovery / continuation
+        "RECOVERY": [
+            "recover", "resume", "return to normal", "normal operation",
+            "exit failsafe"
+        ],
+
+        # Monitoring / detection only
+        "MONITORING": [
+            "monitor", "detect", "check", "observe"
+        ],
+
+        # Control / command
+        "CONTROL": [
+            "command", "set", "control", "drive", "actuate"
+        ],
+
+        # Mandatory behavior
+        "MANDATORY": [
+            "shall", "must", "will"
+        ],
+
+        # Optional / permissive behavior
+        "PERMISSIVE": [
+            "may", "can", "should"
+        ]
+    }
+
+    LLM_TRIGGER_KEYS = {
+        "POTENTIAL_LOGIC_DRIFT",
+        "INTENT_MISMATCH",
+        "CONDITION_EXTRA",
+        "CONDITION_MISSING"
+    }
 
 # =========================================================
 # G5 CONFIG
