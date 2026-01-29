@@ -175,4 +175,3 @@ class G7Config:
     # Outputs
     ALGO_OUTPUT_FILE = "G7_Algorithm_Analysis.xlsx"
     REQ_OUTPUT_FILE  = "G7_Requirement_Quality.xlsx"
-#hi rahul

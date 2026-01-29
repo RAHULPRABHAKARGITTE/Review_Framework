@@ -21,7 +21,7 @@ def main():
     print("G5 review completed.\n")
 
     run_g7()
-    print("G7 review completed hi rahul.\n")
+    print("G7 review completed.\n")
 
 
 if __name__ == "__main__":
