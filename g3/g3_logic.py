@@ -57,3 +57,4 @@ def check_g3(req_text, hardware):
         comments.append(C("g34_resource_size"))
 
     return g31, g32, g33, g34, "; ".join(comments)
+#hi rahul
