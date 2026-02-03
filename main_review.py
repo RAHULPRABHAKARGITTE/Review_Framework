@@ -2,8 +2,7 @@ from g1.main_g1 import run_g1
 from g3.main_g3 import run_g3
 from g4.main_g4 import run_g4
 from g5.main_g5 import run_g5
-from g7.main_g7 import run_g7
-
+from g7.main_G7 import main as run_g7
 
 def main():
     print("Starting Review Framework...")
