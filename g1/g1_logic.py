@@ -493,8 +493,8 @@ def check_g1(system_reqs, hlr_reqs, trace_links):
         if G1Config.LLM_ENABLED and final_result == G1Config.FAIL:
             llm_explanation = explain_mismatch(
                 sys_text=sys_text,
-                sw_text=sw_text,
-                comment=final_comment or "FAIL_WITHOUT_EXPLICIT_REASON",
+                hlr_text=sw_text,
+                issues=final_comment or "FAIL_WITHOUT_EXPLICIT_REASON",
                 evidence=evidence
             )
             
