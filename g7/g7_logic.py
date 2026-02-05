@@ -397,7 +397,7 @@ def append_result(result):
         append_df(writer, summary_sheet, summary_df)
         append_df(writer, details_sheet, details_df)
 
-    print(f"Results appended to {excel_file} → '{summary_sheet}' (summary) and '{details_sheet}' (details) for check '{check_name}'")
+    print(f"✅ Results appended to {excel_file} → '{summary_sheet}' (summary) and '{details_sheet}' (details) for check '{check_name}'")
 
 
 ## Objective G 7.1 ##
@@ -2244,18 +2244,17 @@ def run_objective_g74(srs_docx_path: str, results_xlsx_path: str):
     write_or_replace_sheet(results_xlsx_path, OUTPUT_SHEET_NAME, df)
 
     print(f"Objective G 7.4")
-    print(f"Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME}' (summary) for check 'Timing_WCET_Defined'")
+    print(f"✅ Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME}' (summary) for check 'Timing_WCET_Defined'")
     print(f"Objective G 7.4")
-    print(f"Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME}' (summary) for check 'Timing_Response_Time'")
+    print(f"✅ Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME}' (summary) for check 'Timing_Response_Time'")
     print(f"Objective G 7.4")
-    print(f"Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME}' (summary) for check 'Task_Rates'")
+    print(f"✅ Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME}' (summary) for check 'Task_Rates'")
     print(f"Objective G 7.4")
-    print(f"Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME}' (summary) for check 'Resource_CPU_Utilization")
+    print(f"✅ Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME}' (summary) for check 'Resource_CPU_Utilization")
     print(f"Objective G 7.4")
-    print(f"Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME}' (summary) for check 'Resource_Memory_Constraints'")
+    print(f"✅ Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME}' (summary) for check 'Resource_Memory_Constraints'")
     print(f"Objective G 7.4")
-    print(f"Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME}' (summary) for check 'Resource_I/O_Bandwidth'")
-
+    print(f"✅ Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME}' (summary) for check 'Resource_I/O_Bandwidth'")
 
  ## Objective G 7.5 ##
 
@@ -2525,15 +2524,15 @@ def algorithm_design_meets_do178c_objectives(srs_docx_path: str, results_xlsx_pa
     write_or_replace_sheet(results_xlsx_path, OUTPUT_SHEET_NAME_G75, df)
 
     print("Objective G 7.5")
-    print(f"Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME_G75}' (summary) for check 'Correctness'")
+    print(f"✅ Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME_G75}' (summary) for check 'Correctness'")
     print("Objective G 7.5")
-    print(f"Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME_G75}' (summary) for check 'Determinism'")
+    print(f"✅ Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME_G75}' (summary) for check 'Determinism'")
     print("Objective G 7.5")
-    print(f"Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME_G75}' (summary) for check 'Testability'")
+    print(f"✅ Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME_G75}' (summary) for check 'Testability'")
     print("Objective G 7.5")
-    print(f"Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME_G75}' (summary) for check 'Robustness'")
+    print(f"✅ Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME_G75}' (summary) for check 'Robustness'")
     print("Objective G 7.5")
-    print(f"Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME_G75}' (summary) for check 'Verifiability'")
+    print(f"✅ Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME_G75}' (summary) for check 'Verifiability'")
 
  ## Objective G 7.6 ##
 
@@ -2738,16 +2737,16 @@ def Error_Handling(srs_docx_path: str, results_xlsx_path: str) -> None:
     write_or_replace_sheet(results_xlsx_path, OUTPUT_SHEET_NAME_G76, df)
 
     print("Objective G 7.6")
-    print(f"Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME_G76}'(summary) for check 'Related_to_ErrorHandling'")
+    print(f"✅ Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME_G76}'(summary) for check 'Related_to_ErrorHandling'")
     print("Objective G 7.6")
-    print(f"Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME_G76}'(summary) for check 'Error_Detection'")
+    print(f"✅ Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME_G76}'(summary) for check 'Error_Detection'")
     print("Objective G 7.6")
-    print(f"Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME_G76}'(summary) for check 'Error_Classification'")
+    print(f"✅ Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME_G76}'(summary) for check 'Error_Classification'")
     print("Objective G 7.6")
-    print(f"Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME_G76}'(summary) for check 'Error_Reporting'")
+    print(f"✅ Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME_G76}'(summary) for check 'Error_Reporting'")
     print("Objective G 7.6")
-    print(f"Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME_G76}'(summary) for check 'Error_Recovery'")
+    print(f"✅ Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME_G76}'(summary) for check 'Error_Recovery'")
     print("Objective G 7.6")
-    print(f"Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME_G76}'(summary) for check 'Error_Traceability'")
+    print(f"✅ Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME_G76}'(summary) for check 'Error_Traceability'")
     print("Objective G 7.6")
-    print(f"Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME_G76}'(summary) for check 'Overall_DO178_ErrorHandling'")
+    print(f"✅ Results appended to {results_xlsx_path} → '{OUTPUT_SHEET_NAME_G76}'(summary) for check 'Overall_DO178_ErrorHandling'")

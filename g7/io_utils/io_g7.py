@@ -46,7 +46,7 @@ def append_results(summary_df, details_df, excel_file: str, summary_sheet: str, 
         with pd.ExcelWriter(excel_file, mode="w", engine="xlsxwriter") as writer:
             summary_df.to_excel(writer, sheet_name=summary_sheet, index=False, header=True)
             details_df.to_excel(writer, sheet_name=details_sheet, index=False, header=True)
-        print(f"Created {excel_file} with sheets '{summary_sheet}' and '{details_sheet}'")
+        print(f"✅ Created {excel_file} with sheets '{summary_sheet}' and '{details_sheet}'")
         return
 
     book = load_workbook(excel_file)
@@ -64,7 +64,7 @@ def append_results(summary_df, details_df, excel_file: str, summary_sheet: str, 
         _append_df(writer, summary_sheet, summary_df)
         _append_df(writer, details_sheet, details_df)
 
-    print(f"Results appended to {excel_file} → '{summary_sheet}' and '{details_sheet}'")
+    print(f"✅ Results appended to {excel_file} → '{summary_sheet}' and '{details_sheet}'")
 
 # -----------------------------
 # Excel helper (required by g7_logic.py)

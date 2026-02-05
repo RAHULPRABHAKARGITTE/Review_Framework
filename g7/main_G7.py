@@ -19,8 +19,6 @@ from g7.g7_logic import (
 )
 
 
-from g7.g7_logic import run_objective_g74
-run_objective_g74(DEFAULT_SRS_PATH, RESULTS_XLSX)
 
 def main():
     algo_req = parse_requirements(DEFAULT_SRS_PATH)
@@ -47,6 +45,7 @@ def main():
     # -------------------------
     # Objective G 7.4
     # -------------------------
+    from g7.g7_logic import run_objective_g74
     run_objective_g74(DEFAULT_SRS_PATH, RESULTS_XLSX)
     
     # -------------------------
