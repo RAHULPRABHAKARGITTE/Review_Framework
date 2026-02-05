@@ -4,11 +4,13 @@ _llm_cache = {}
 
 MODEL_NAME = "mistral"  # change if needed
 
-def explain_mismatch(sys_text: str, hlr_text: str, issues: str) -> str:
+#def explain_mismatch(sys_text: str, hlr_text: str, issues: str) -> str:
+def explain_mismatch(sys_text, hlr_text, issues, evidence):
     cache_key = (
         sys_text[:300],
         hlr_text[:300],
-        issues
+        issues,
+        str(evidence)
     )
 
     if cache_key in _llm_cache:
