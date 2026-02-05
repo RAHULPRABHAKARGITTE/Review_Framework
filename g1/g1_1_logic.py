@@ -2,8 +2,9 @@ from config import G1Config
 import re
 from decimal import Decimal, InvalidOperation
 
+
 # ============================================================
-# BASIC EXTRACTORS
+# FAILSAFE LEVEL EXTRACTION
 # ============================================================
 
 # def extract_failsafe_level(text: str):
@@ -88,7 +89,6 @@ def extract_monitor_list_block(text: str) -> set:
     # Comma list: join only buffer text
     joined = " ".join(buffer)
     parts = re.split(r"[;,]", joined)
-
     for p in parts:
         item = p.strip(" ,;.")
         if len(item) >= 4:
@@ -128,7 +128,7 @@ def normalize_table(table_text: str) -> set:
 
 
 # ============================================================
-# ARINC LABEL HANDLING (ROBUST)
+# ARINC LABEL HANDLING
 # ============================================================
 
 ARINC_LABEL_PATTERN = re.compile(r"\b0?[0-7]{3}\b")
@@ -213,7 +213,7 @@ def format_numeric_drift(sys_nums: set, hlr_nums: set) -> str:
 
 
 # ============================================================
-# BOOLEAN EXTRACTION (SSM + DEFAULT)
+# BOOLEAN EXTRACTION
 # ============================================================
 
 # Wider: handles "!= Normal Operation", "not equal", "NOT set to"
@@ -275,8 +275,30 @@ def extract_boolean_polarity(text: str):
 # FAILSAFE COVERAGE SIGNALS
 # ============================================================
 
+# def extract_failsafe_states(text: str) -> set:
+#     return set(re.findall(r"failsafe level\s*(\d+)", (text or "").lower()))
+
+FAILSAFE_STATE_RE = re.compile(
+    r"(?:failsafe(?:\s*[-_]*\s*level|_level)\s*[-_ ]*([0-9]+))",
+    re.IGNORECASE
+)
+
 def extract_failsafe_states(text: str) -> set:
-    return set(re.findall(r"failsafe level\s*(\d+)", (text or "").lower()))
+    """
+    Extract FAILSAFE levels appearing as:
+      FAILSAFE_LEVEL_1
+      FAILSAFE level 1
+      failsafe_level_2
+    Returns: {"1","2",...}
+    """
+    if not text:
+        return set()
+
+    found = set()
+    for m in FAILSAFE_STATE_RE.finditer(text):
+        found.add(m.group(1))
+    return found
+
 
 def extract_state_behaviors(text: str) -> set:
     t = (text or "").lower()
@@ -295,7 +317,7 @@ def extract_state_behaviors(text: str) -> set:
 
 
 # ============================================================
-# COMPARABILITY GATE (STRONG)
+# COMPARABILITY GATE
 # ============================================================
 
 def has_any_signal(sys_text: str, hlr_text: str, sys_table: set, hlr_table: set) -> bool:
@@ -320,24 +342,28 @@ def has_any_signal(sys_text: str, hlr_text: str, sys_table: set, hlr_table: set)
 # ============================================================
 
 def check_g1_1(sys_req: dict, hlr_req: dict):
-    sys_text = sys_req.get("TEXT", "") or ""
-    hlr_text = hlr_req.get("TEXT", "") or ""
+    # RAW text first
+    sys_text = sys_req.get("TEXT_RAW") or sys_req.get("TEXT", "") or ""
+    hlr_text = hlr_req.get("TEXT_RAW") or hlr_req.get("TEXT", "") or ""
+
     sys_table = normalize_table(sys_req.get("TABLE_TEXT", "") or "")
     hlr_table = normalize_table(hlr_req.get("TABLE_TEXT", "") or "")
 
     findings = []
 
-    # STRICT: if no signals, do not PASS
+    # STRICT: no signal => FAIL
     if not has_any_signal(sys_text, hlr_text, sys_table, hlr_table):
-        #return FAIL, "NOT_APPLICABLE", "No comparable structured signals detected; manual review required."
-        return G1Config.PASS, "NOT_APPLICABLE", (
-            "No comparable structured signals detected; relied on state-model check."
+        return G1Config.FAIL, "NOT_APPLICABLE", (
+            "No comparable structured signals detected; manual review required."
         )
 
-
-    # --- ARINC LABEL LOGIC (SYS subset in SW union)
-    # If either looks like ARINC via table content or contains arinc keyword, compare labels.
-    if looks_like_arinc(sys_req.get("TABLE_TEXT", "")) or looks_like_arinc(hlr_req.get("TABLE_TEXT", "")) or ("arinc" in sys_text.lower()) or ("arinc" in hlr_text.lower()):
+    # --- ARINC label logic
+    if (
+        looks_like_arinc(sys_req.get("TABLE_TEXT", "")) or
+        looks_like_arinc(hlr_req.get("TABLE_TEXT", "")) or
+        ("arinc" in sys_text.lower()) or
+        ("arinc" in hlr_text.lower())
+    ):
         sys_labels = extract_arinc_labels_anywhere(sys_text, sys_req.get("TABLE_TEXT", ""))
         hlr_labels = extract_arinc_labels_anywhere(hlr_text, hlr_req.get("TABLE_TEXT", ""))
 
@@ -356,20 +382,20 @@ def check_g1_1(sys_req: dict, hlr_req: dict):
     sys_ssm = extract_ssm_condition(sys_text)
     hlr_ssm = extract_ssm_condition(hlr_text)
     if sys_ssm is not None and hlr_ssm is not None and sys_ssm != hlr_ssm:
-        findings.append("BOOLEAN_POLARITY_MISMATCH")
+        findings.append(("BOOLEAN_POLARITY_MISMATCH", "SSM condition differs"))
 
     # --- Boolean polarity mismatch (general)
     if sys_ssm is None and hlr_ssm is None:
         sys_bool = extract_boolean_polarity(sys_text)
         hlr_bool = extract_boolean_polarity(hlr_text)
         if sys_bool and hlr_bool and sys_bool != hlr_bool:
-            findings.append("BOOLEAN_POLARITY_MISMATCH")
+            findings.append(("BOOLEAN_POLARITY_MISMATCH", f"{sys_bool} vs {hlr_bool}"))
 
     # --- Numeric mismatch (failsafe level)
     sys_level = extract_failsafe_level(sys_text)
     hlr_level = extract_failsafe_level(hlr_text)
     if sys_level and hlr_level and sys_level != hlr_level:
-        findings.append("NUMERIC_MISMATCH")
+        findings.append(("NUMERIC_MISMATCH", f"Failsafe level SYS={sys_level} SW={hlr_level}"))
 
     # --- Coverage mismatch (failsafe levels)
     sys_states = extract_failsafe_states(sys_text)
@@ -404,11 +430,10 @@ def check_g1_1(sys_req: dict, hlr_req: dict):
 
     # --- Time mismatch
     if extract_time_values(sys_text) != extract_time_values(hlr_text):
-        # Only raise if SYS has some times
         if extract_time_values(sys_text):
-            findings.append("NUMERIC_MISMATCH")
+            findings.append(("NUMERIC_MISMATCH", "Timing values differ"))
 
-    # --- Expression drift (only if SYS has expression nums)
+    # --- Expression drift
     sys_nums = extract_expression_numbers(sys_text) - {"0", "1"}
     hlr_nums = extract_expression_numbers(hlr_text) - {"0", "1"}
     if sys_nums and sys_nums != hlr_nums:
@@ -416,29 +441,23 @@ def check_g1_1(sys_req: dict, hlr_req: dict):
 
     # --- Table missing/extra
     if sys_table and not hlr_table:
-        findings.append("TRACEABILITY_MISSING")
+        findings.append(("TRACEABILITY_MISSING", "Table missing in software"))
     if hlr_table and not sys_table:
-        findings.append("TRACEABILITY_EXTRA")
+        findings.append(("TRACEABILITY_EXTRA", "Extra table in software"))
 
     # --- Table mismatch
     if sys_table and hlr_table and sys_table != hlr_table:
-        findings.append("NUMERIC_MISMATCH")
+        findings.append(("NUMERIC_MISMATCH", "Table contents differ"))
 
-    # --- Refinement flag
     refinement_flag = "NOT_APPLICABLE"
-    finding_keys = {f[0] if isinstance(f, tuple) else f for f in findings}
+    finding_keys = {k for (k, _) in findings}
     if "BOOLEAN_POLARITY_MISMATCH" in finding_keys or "POTENTIAL_LOGIC_DRIFT" in finding_keys:
         refinement_flag = "UNACCEPTABLE_DRIFT"
 
-    # --- Render
     if findings:
         rendered = []
-        for f in findings:
-            if isinstance(f, tuple):
-                key, detail = f
-                rendered.append(f"{G1Config.COMMENTS.get(key, key)} ({detail})")
-            else:
-                rendered.append(G1Config.COMMENTS.get(f, str(f)))
+        for key, detail in findings:
+            rendered.append(f"{G1Config.COMMENTS.get(key, key)} ({detail})")
         return G1Config.FAIL, refinement_flag, " | ".join(rendered)
 
     return G1Config.PASS, refinement_flag, "System and software requirements are functionally aligned."

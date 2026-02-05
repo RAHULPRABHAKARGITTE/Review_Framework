@@ -2,16 +2,91 @@ import os
 import pandas as pd
 
 from g1.g1_logic import check_g1
+from g1.g1_3_logic import compare
+from g1.g1_4_logic import run_g1_4
 from io_utils import G1IOUtils
 from g1.excel_utils import format_excel_sheet
 from g1.docx_extractor import run_docx_extractor
 
 # G1.3 imports
 from config import CommonConfig, G1Config
-from g1.g1_3_logic import compare_g1_3
+#from g1_3_logic import compare
 
 
 OUTPUT_FILE = os.path.join(CommonConfig.BASE_OUTPUT, "G1_Compliance.xlsx")
+
+def generate_g1_summary():
+    print("🚀 Generating G1_3_4 Summary")
+
+    g13_path = os.path.join(CommonConfig.BASE_OUTPUT, G1Config.G1_3_OUTPUT)
+    g14_path = os.path.join(CommonConfig.BASE_OUTPUT, G1Config.G1_4_OUTPUT)
+    out_path = os.path.join(CommonConfig.BASE_OUTPUT, G1Config.G1_3_4_SUMMARY_OUTPUT)
+
+    # -------------------------------
+    # Load G1.3 outputs
+    # -------------------------------
+    g13_msg = pd.read_excel(g13_path, sheet_name="Message_Definition_Comparison")
+    g13_rx  = pd.read_excel(g13_path, sheet_name="Rx_Rate_Comparison")
+
+    # -------------------------------
+    # Load G1.4 output
+    # -------------------------------
+    g14 = pd.read_excel(g14_path)
+
+    summary_rows = []
+
+    # G1.3 – Message Definition
+    for _, row in g13_msg.iterrows():
+        summary_rows.append({
+            "HLR ID": "SCU_STC_SRS_135",
+            "Label": row.get("Label", ""),
+            "Intent Similarity": "",
+            "G1_3_Status": row.get("Status", ""),
+            "G1_4_Overall Status": "",
+            "Reason": row.get("Reason", "")
+        })
+
+    # G1.3 – Rx Rate
+    for _, row in g13_rx.iterrows():
+        summary_rows.append({
+            "HLR ID": "SCU_STC_SRS_137",
+            "Label": row.get("Label", ""),
+            "Intent Similarity": "",
+            "G1_3_Status": row.get("Status", ""),
+            "G1_4_Overall Status": "",
+            "Reason": row.get("Reason", "")
+        })
+
+    # G1.4 – Requirement Review
+    for _, row in g14.iterrows():
+        summary_rows.append({
+            "HLR ID": row.get("HLR ID", ""),
+            "Label": "",
+            "Intent Similarity": row.get("Intent Similarity", ""),
+            "G1_3_Status": "",
+            "G1_4_Overall Status": row.get("Overall Status", ""),
+            "Reason": ""
+        })
+
+    summary_df = pd.DataFrame(summary_rows)
+
+    # ensure output dir exists
+    os.makedirs(CommonConfig.BASE_OUTPUT, exist_ok=True)
+
+    # Avoid permission error
+    if os.path.exists(out_path):
+        try:
+            os.remove(out_path)
+        except PermissionError:
+            raise RuntimeError(f"❌ Please close '{out_path}' and rerun.")
+
+    with pd.ExcelWriter(out_path, engine="openpyxl") as w:
+        summary_df.to_excel(w, sheet_name="G1_3_4_Summary", index=False)
+        format_excel_sheet(w, "G1_3_4_Summary")
+
+    print("✅ G1_3_4 Summary generated")
+    print("📄 Output:", out_path)
+
 
 
 def run_g1():
@@ -70,72 +145,41 @@ def run_g1():
     print(f"✅ G1.1/G1.2 output generated: {OUTPUT_FILE}")
 
     # ============================================================
-    # PART 2: G1.3 (integrated, same as your MY_VERSION)
+    # PART 2: G1.3 (Niri version)
     # ============================================================
-    try:
-        print("▶ Running G1.3")
-        msg_cmp, rx_cmp = compare_g1_3()
+    print("🚀 Starting G1.3 ARINC Review")
+    msg_cmp, rx_cmp = compare()
+    g13_path = os.path.join(CommonConfig.BASE_OUTPUT, G1Config.G1_3_OUTPUT)
 
-        out_g13 = os.path.join(CommonConfig.BASE_OUTPUT, G1Config.G1_3_OUTPUT)
-        with pd.ExcelWriter(out_g13, engine="openpyxl") as w:
-            pd.DataFrame(msg_cmp).to_excel(
-                excel_writer=w,
-                sheet_name="Message_Definition_Comparison",
-                index=False
-            )
-            pd.DataFrame(rx_cmp).to_excel(
-                excel_writer=w,
-                sheet_name="Rx_Rate_Comparison",
-                index=False
-            )
+    if os.path.exists(g13_path):
+        try:
+            os.remove(g13_path)
+        except PermissionError:
+            raise RuntimeError(f"❌ Please close '{g13_path}' and rerun.")
 
-        print("✅ G1.3 completed")
-        print(f"📄 Output: {out_g13}")
-    except Exception as e:
-        print(f"❌ G1.3 failed: {e}")
+    with pd.ExcelWriter(g13_path, engine="openpyxl") as w:
+        pd.DataFrame(msg_cmp).to_excel(
+            w, sheet_name="Message_Definition_Comparison", index=False
+        )
+        format_excel_sheet(w, "Message_Definition_Comparison")
+
+        pd.DataFrame(rx_cmp).to_excel(
+            w, sheet_name="Rx_Rate_Comparison", index=False
+        )
+        format_excel_sheet(w, "Rx_Rate_Comparison")
+
+    print("✅ G1.3 completed")
+    print("📄 Output:", g13_path)
 
     # ============================================================
-    # PART 3: G1.4 (integrated WITHOUT breaking signatures)
+    # PART 3: G1.4 (Niri version)
     # ============================================================
-    try:
-        print("▶ Running G1.4")
+    print("🚀 Starting G1.4 Requirement Review")
+    run_g1_4()
+    print("✅ G1.4 completed")
+    print("📄 Output:", G1Config.G1_4_OUTPUT)
 
-        # Build HLR->SYS mapping from traceability
-        rows = []
-        for link in trace_links:
-            hid = (link.get("HLR_ID") or "").strip()
-            sid = (link.get("SYS_ID") or "").strip()
-
-            if not hid:
-                continue
-
-            if not sid or sid.upper() == "NOT_TRACED":
-                sid = "NOT_TRACED"
-
-            # keep old output columns but don't call incompatible check_g1()
-            label = "N/A"
-            term = "N/A"
-            sim = "N/A"
-            status = "FAIL" if sid == "NOT_TRACED" else "PASS"
-
-            rows.append([hid, sid, label, term, sim, status])
-
-        df_g14 = pd.DataFrame(rows, columns=[
-            "HLR ID",
-            "Mapped System Req",
-            "Label Match",
-            "Terminology",
-            "Intent Similarity",
-            "Overall Status"
-        ])
-
-        out_g14 = os.path.join(CommonConfig.BASE_OUTPUT, G1Config.G1_4_OUTPUT)
-        df_g14.to_excel(out_g14, index=False)
-
-        print("✅ G1.4 completed")
-        print(f"📄 Output: {out_g14}")
-    except Exception as e:
-        print(f"❌ G1.4 failed: {e}")
+    generate_g1_summary()
 
 
 if __name__ == "__main__":

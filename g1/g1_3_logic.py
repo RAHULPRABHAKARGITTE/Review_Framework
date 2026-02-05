@@ -1,47 +1,43 @@
-# =========================================================
-# G1.3 – ARINC SRS vs ICD COMPARISON LOGIC
-# =========================================================
-
+# g1_3_logic.py
 import os
 import re
 from docx import Document
+import pandas as pd
 
 from config import CommonConfig, G1Config
-from io_utils import clean, norm
+from io_utils import G1_3_4IOUtils
 
+# =========================================================
+# STEP 1: Generate Software_req.docx from SRS
+# =========================================================
 
 SRS_ID_RE = re.compile(r"SCU_STC_SRS_\d+")
 
-def extract_label(text):
-    """
-    Extract ARINC octal label (<= 377)
-    Examples:
-      - Label 206
-      - 206 (ADC)
-    """
-    if not text:
-        return None
 
-    import re
-    matches = re.findall(r"\b([0-7]{1,3})\b", text)
-    for m in matches:
-        if 0 < int(m) <= 377:
-            return m
-    return None
+def _in_path(fname: str) -> str:
+    return os.path.join(CommonConfig.BASE_INPUT, fname)
 
-# =========================================================
-# STEP 1: GENERATE Software_req.docx FROM SRS
-# =========================================================
+
+def _out_path(fname: str) -> str:
+    return os.path.join(CommonConfig.BASE_OUTPUT, fname)
+
+
 def generate_software_req():
     """
-    Generates Software_req.docx from SRS
-    Output is written into framework output directory
+    Generates a normalized Software_req.docx by extracting requirement rows from the SRS.
+    Output location: outputs/<G1Config.SOFTWARE_REQ_DOCX>
     """
+    os.makedirs(CommonConfig.BASE_OUTPUT, exist_ok=True)
 
-    srs_path = os.path.join(CommonConfig.BASE_INPUT, G1Config.SRS_DOCX)
-    out_path = os.path.join(CommonConfig.BASE_OUTPUT, G1Config.SOFTWARE_REQ_DOCX)
+    out_path = _out_path(G1Config.SOFTWARE_REQ_DOCX)
 
-    src = Document(srs_path)
+    if os.path.exists(out_path):
+        try:
+            os.remove(out_path)
+        except PermissionError:
+            raise RuntimeError(f"❌ Please close '{out_path}' and rerun.")
+
+    src = Document(_in_path(G1Config.SRS_DOCX))
     out = Document()
 
     table = out.add_table(rows=1, cols=2)
@@ -51,8 +47,8 @@ def generate_software_req():
 
     for tbl in src.tables:
         for row in tbl.rows:
-            row_text = " ".join(c.text for c in row.cells)
-            m = SRS_ID_RE.search(row_text)
+            text = " ".join(c.text for c in row.cells)
+            m = SRS_ID_RE.search(text)
             if not m:
                 continue
 
@@ -77,176 +73,155 @@ def generate_software_req():
                             t.rows[i].cells[j].text = cc.text.strip()
 
     out.save(out_path)
+    print(f"✅ Generated {out_path}")
+    return out_path
 
 
-# =========================================================
-# STEP 2: EXTRACT ARINC FROM Software_req.docx (SRS)
-# =========================================================
-def extract_srs_arinc():
-    path = os.path.join(CommonConfig.BASE_OUTPUT, G1Config.SOFTWARE_REQ_DOCX)
-    doc = Document(path)
-
+def extract_srs_arinc(software_req_docx: str):
+    doc = Document(software_req_docx)
     rx, msg = [], []
 
     for tbl in doc.tables:
         for row in tbl.rows[1:]:
+            req_id = row.cells[0].text.strip()
             cell = row.cells[1]
-            label = extract_label(cell.text)
+            label = G1_3_4IOUtils.extract_label(cell.text)
 
             for nt in cell.tables:
-                headers = [norm(c.text) for c in nt.rows[0].cells]
+                headers = [G1_3_4IOUtils.norm(c.text) for c in nt.rows[0].cells]
 
-                # ---------- RX RATE ----------
+                # RX RATE
                 if "receiver" in " ".join(headers):
                     for r in nt.rows[1:]:
-                        c = [clean(x.text) for x in r.cells]
-                        rx.append({
-                            "Label": extract_label(c[1]) or label,
-                            "Receiver": c[0],
-                            "Interval": c[2]
-                        })
+                        c = [G1_3_4IOUtils.clean(x.text) for x in r.cells]
+                        if len(c) >= 3:
+                            rx.append({
+                                "Req ID": req_id,
+                                "Label": G1_3_4IOUtils.extract_label(c[1]) or label,
+                                "Receiver": c[0],
+                                "Interval": c[2],
+                            })
 
-                # ---------- MESSAGE DEFINITION ----------
+                # MESSAGE DEFINITION
                 if "bit" in " ".join(headers):
                     for r in nt.rows[1:]:
-                        c = [clean(x.text) for x in r.cells]
-                        msg.append({
-                            "Label": label,
-                            "Bit": c[0],
-                            "Field": c[1],
-                            "Description": c[2],
-                            "Definition": c[3]
-                        })
+                        c = [G1_3_4IOUtils.clean(x.text) for x in r.cells]
+                        if len(c) >= 4:
+                            msg.append({
+                                "Req ID": req_id,
+                                "Label": label,
+                                "Bit": c[0],
+                                "Field": c[1],
+                                "Description": c[2],
+                                "Definition": c[3],
+                            })
 
     return rx, msg
 
 
-# =========================================================
-# STEP 3: EXTRACT ARINC FROM ICD DOCX
-# =========================================================
 def extract_icd_arinc():
-    path = os.path.join(CommonConfig.BASE_INPUT, G1Config.ICD_DOCX)
-    doc = Document(path)
+    doc = Document(_in_path(G1Config.ICD_DOCX))
 
     rx, msg = [], []
     current_label = None
+
     tables = list(doc.tables)
     ti = 0
 
     for p in doc.paragraphs:
-        lbl = extract_label(p.text)
+        lbl = G1_3_4IOUtils.extract_label(p.text)
         if lbl:
             current_label = lbl
 
         if ti < len(tables) and tables[ti]._tbl.getprevious() == p._p:
             t = tables[ti]
             ti += 1
-            headers = [norm(c.text) for c in t.rows[0].cells]
 
-            # ---------- RX RATE ----------
+            headers = [G1_3_4IOUtils.norm(c.text) for c in t.rows[0].cells]
+
             if "receiver" in " ".join(headers):
                 for r in t.rows[1:]:
-                    c = [clean(x.text) for x in r.cells]
-                    rx.append({
-                        "Label": extract_label(c[1]),
-                        "Receiver": c[0],
-                        "Interval": c[2]
-                    })
+                    c = [G1_3_4IOUtils.clean(x.text) for x in r.cells]
+                    if len(c) >= 3:
+                        rx.append({
+                            "Label": G1_3_4IOUtils.extract_label(c[1]),
+                            "Receiver": c[0],
+                            "Interval": c[2],
+                        })
 
-            # ---------- MESSAGE DEFINITION ----------
             if "bit" in " ".join(headers):
                 for r in t.rows[1:]:
-                    c = [clean(x.text) for x in r.cells]
-                    msg.append({
-                        "Label": current_label,
-                        "Bit": c[0],
-                        "Field": c[1],
-                        "Description": c[2],
-                        "Definition": c[3]
-                    })
+                    c = [G1_3_4IOUtils.clean(x.text) for x in r.cells]
+                    if len(c) >= 4:
+                        msg.append({
+                            "Label": current_label,
+                            "Bit": c[0],
+                            "Field": c[1],
+                            "Description": c[2],
+                            "Definition": c[3],
+                        })
 
     return rx, msg
 
 
-# =========================================================
-# STEP 4: FULL G1.3 FLOW
-# =========================================================
-def compare_g1_3():
+def compare():
     """
-    Executes full G1.3 flow:
-    - Generate Software_req.docx
-    - Extract ARINC from SRS
-    - Extract ARINC from ICD
-    - Compare and return results
+    Main entrypoint for G1.3.
+    Returns: (msg_out, rx_out)
     """
+    software_req_docx = generate_software_req()
 
-    generate_software_req()
-
-    srs_rx, srs_msg = extract_srs_arinc()
+    srs_rx, srs_msg = extract_srs_arinc(software_req_docx)
     icd_rx, icd_msg = extract_icd_arinc()
 
     msg_out, rx_out = [], []
 
-    # ---------- MESSAGE DEFINITION COMPARISON ----------
     for s in srs_msg:
         match = next(
-            (
-                i for i in icd_msg
-                if i["Label"] == s["Label"]
-                and norm(i["Field"]) == norm(s["Field"])
-            ),
+            (i for i in icd_msg
+             if i.get("Label") == s.get("Label")
+             and G1_3_4IOUtils.norm(i.get("Field")) == G1_3_4IOUtils.norm(s.get("Field"))),
             None
         )
 
         if not match:
-            msg_out.append({
-                **s,
-                "Status": "Fail",
-                "Reason": "Field not found in ICD"
-            })
+            msg_out.append({**s, "Status": "Fail", "Reason": "Field not found in ICD"})
             continue
 
-        sb1 = int(re.findall(r"\d+", s["Bit"])[0]) if s["Bit"] else None
-        ib1 = int(re.findall(r"\d+", match["Bit"])[0]) if match["Bit"] else None
+        sb1, _ = G1_3_4IOUtils.parse_bits(s.get("Bit"))
+        ib1, _ = G1_3_4IOUtils.parse_bits(match.get("Bit"))
 
         fails = []
         if sb1 != (ib1 + 1 if ib1 is not None else None):
             fails.append("Bit offset mismatch (SRS = ICD + 1)")
-        if norm(s["Description"]) != norm(match["Description"]):
+        if G1_3_4IOUtils.norm(s.get("Description")) != G1_3_4IOUtils.norm(match.get("Description")):
             fails.append("Description mismatch")
-        if norm(s["Definition"]) != norm(match["Definition"]):
+        if G1_3_4IOUtils.norm(s.get("Definition")) != G1_3_4IOUtils.norm(match.get("Definition")):
             fails.append("Definition mismatch")
 
         msg_out.append({
             **s,
-            "ICD Bit": match["Bit"],
+            "ICD Bit": match.get("Bit", ""),
             "Status": "Pass" if not fails else "Fail",
             "Reason": " | ".join(fails)
         })
 
-    # ---------- RX RATE COMPARISON ----------
     for s in srs_rx:
         match = next(
-            (
-                i for i in icd_rx
-                if i["Label"] == s["Label"]
-                and norm(i["Receiver"]) == norm(s["Receiver"])
-            ),
+            (i for i in icd_rx
+             if i.get("Label") == s.get("Label")
+             and G1_3_4IOUtils.norm(i.get("Receiver")) == G1_3_4IOUtils.norm(s.get("Receiver"))),
             None
         )
 
         if not match:
-            rx_out.append({
-                **s,
-                "Status": "Fail",
-                "Reason": "Receiver not found in ICD"
-            })
+            rx_out.append({**s, "Status": "Fail", "Reason": "Receiver not found in ICD"})
             continue
 
-        ok = norm(s["Interval"]) == norm(match["Interval"])
+        ok = G1_3_4IOUtils.norm(s.get("Interval")) == G1_3_4IOUtils.norm(match.get("Interval"))
         rx_out.append({
             **s,
-            "ICD Interval": match["Interval"],
+            "ICD Interval": match.get("Interval", ""),
             "Status": "Pass" if ok else "Fail",
             "Reason": "" if ok else "Transmission interval mismatch"
         })

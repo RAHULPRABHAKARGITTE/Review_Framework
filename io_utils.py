@@ -2,7 +2,7 @@ import os
 import re
 from docx import Document
 from openpyxl import load_workbook
-from config import G4Config
+from config import G4Config,LABEL_RE,REQ_ID_RE
 
 
 # ============================================================
@@ -104,7 +104,7 @@ def collect_requirements(input_dir):
 
 
 # ============================================================
-# NORMALIZATION (KEEP ONE AUTHORITATIVE VERSION)
+# NORMALIZATION
 # ============================================================
 
 def clean(text):
@@ -112,15 +112,17 @@ def clean(text):
 
 
 def norm(text):
+    """
+    Soft normalization for similarity functions.
+    Does NOT delete symbols like >= in the raw pipeline.
+    """
     return re.sub(r"\s+", " ", str(text).lower().strip()) if text else ""
 
 
 def normalize_text(text):
     """
-    Normalizes requirement text for downstream analysis.
-    - Collapses whitespace
-    - Lowercases
-    - Removes punctuation to stabilize comparisons
+    Strong NLP normalization.
+    WARNING: removes punctuation, so use ONLY for similarity/intent matching.
     """
     if not text:
         return ""
@@ -129,7 +131,7 @@ def normalize_text(text):
 
 
 # ============================================================
-# REQUIREMENT EXTRACTION (FIXED WITHOUT RENAMING)
+# REQUIREMENT EXTRACTION (G5/G7 compatibility)
 # ============================================================
 
 VALID_ID_PATTERN = re.compile(r"^\s*(SCU_STC_SRS_\d+)\b", re.IGNORECASE)
@@ -151,7 +153,6 @@ def _extract_requirements_from_text(text):
     while i < len(lines):
         m = REQ_ID_RE.match(lines[i])
         if m:
-            # original code uses m.group(1) (as in your file)
             rid = m.group(1)
             lookahead = " ".join(lines[i:i + 5]).lower()
 
@@ -208,12 +209,7 @@ def _extract_requirements_from_docx(docx_path):
 
 def extract_requirements(arg):
     """
-    Single public function name that supports BOTH call styles.
-
-    - extract_requirements(text: str)       -> dict (G1.4 style)
-    - extract_requirements(docx_path: str)  -> list[dict] (DOCX table style)
-
-    This avoids breaking any existing imports.
+    Single public function name supports BOTH call styles.
     """
     # Heuristic: if it's a .docx file path, treat as DOCX
     if isinstance(arg, str) and arg.strip().lower().endswith(".docx") and os.path.exists(arg):
@@ -224,27 +220,23 @@ def extract_requirements(arg):
 
 
 # ============================================================
-# G1 WRAPPER (SAFE: DOES NOT AFFECT EXISTING IMPORTS)
+# G1 WRAPPER (RAW + NORM safe)
 # ============================================================
 
-# Define patterns used in G1 loader
-SYS_ID_PATTERN = re.compile(r"^[A-Z0-9_]+_SYS_\d+$", re.IGNORECASE)
-HLR_ID_PATTERN = re.compile(r"^[A-Z0-9_]+_SRS_\d+$", re.IGNORECASE)
+SYS_ID_PATTERN = re.compile(r"[A-Z0-9_]+_SYS_\d+", re.IGNORECASE)
+HLR_ID_PATTERN = re.compile(r"[A-Z0-9_]+_SRS_\d+", re.IGNORECASE)
 
 
 class G1IOUtils:
-    """Your io_utils_my_version wrapped safely for G1 usage."""
+    """Safe IO wrapper for G1."""
 
     @staticmethod
     def read_docx_tables(path):
         doc = Document(path)
         rows = []
-
         for table in doc.tables:
             for row in table.rows:
-                cells = [cell.text.strip() for cell in row.cells]
-                rows.append(cells)
-
+                rows.append([cell.text.strip() for cell in row.cells])
         return rows
 
     @staticmethod
@@ -288,11 +280,14 @@ class G1IOUtils:
 
     @staticmethod
     def extract_cell_text_and_tables(cell):
+        """
+        Preserve newlines in RAW to support state-diagram + IF/ELSE parsing.
+        """
         text_parts = []
         table_blocks = []
 
         for p in cell.paragraphs:
-            if p.text.strip():
+            if p.text and p.text.strip():
                 text_parts.append(p.text.strip())
 
         for table in cell.tables:
@@ -306,14 +301,18 @@ class G1IOUtils:
             if rows:
                 table_blocks.append("\n".join(rows))
 
-        return " ".join(text_parts), "\n\n".join(table_blocks)
+        return "\n".join(text_parts), "\n\n".join(table_blocks)
 
     @staticmethod
     def build_system_text_to_id_map(system_reqs):
         mapping = {}
         for r in system_reqs:
-            mapping[r["TEXT"]] = r["SYS_ID"]
+            mapping[r.get("TEXT_RAW", r.get("TEXT", ""))] = r["SYS_ID"]
         return mapping
+
+    @staticmethod
+    def normalize_id(x: str) -> str:
+        return re.sub(r"[^A-Z0-9_]", "", (x or "").upper())
 
     @staticmethod
     def load_system_requirements(path):
@@ -325,20 +324,24 @@ class G1IOUtils:
                 if len(row.cells) < 2:
                     continue
 
-                sys_id = row.cells[0].text.strip()
+                sys_cell = row.cells[0].text.replace("\u00a0", " ").strip()
                 desc_cell = row.cells[1]
 
-                if sys_id.lower() in ("id", "sys id", "requirement id"):
+                if sys_cell.lower() in ("id", "sys id", "requirement id"):
                     continue
 
-                if not SYS_ID_PATTERN.match(sys_id):
+                m = SYS_ID_PATTERN.search(sys_cell)
+                if not m:
                     continue
+                sys_id = G1IOUtils.normalize_id(m.group(0))
 
-                text, table_text = G1IOUtils.extract_cell_text_and_tables(desc_cell)
+                raw_text, table_text = G1IOUtils.extract_cell_text_and_tables(desc_cell)
 
                 system_reqs.append({
                     "SYS_ID": sys_id,
-                    "TEXT": normalize_text(text),
+                    "TEXT_RAW": raw_text,
+                    "TEXT": raw_text,  # backward compatible
+                    "TEXT_NORM": normalize_text(raw_text),
                     "TABLE_TEXT": table_text
                 })
 
@@ -354,17 +357,21 @@ class G1IOUtils:
                 if len(row.cells) < 2:
                     continue
 
-                hlr_id = row.cells[0].text.strip()
+                hlr_cell = row.cells[0].text.replace("\u00a0", " ").strip()
                 desc_cell = row.cells[1]
 
-                if not HLR_ID_PATTERN.match(hlr_id):
+                m = HLR_ID_PATTERN.search(hlr_cell)
+                if not m:
                     continue
+                hlr_id = m.group(0)
 
-                text, table_text = G1IOUtils.extract_cell_text_and_tables(desc_cell)
+                raw_text, table_text = G1IOUtils.extract_cell_text_and_tables(desc_cell)
 
                 hlr_reqs.append({
                     "HLR_ID": hlr_id,
-                    "TEXT": normalize_text(text),
+                    "TEXT_RAW": raw_text,
+                    "TEXT": raw_text,  # backward compatible
+                    "TEXT_NORM": normalize_text(raw_text),
                     "TABLE_TEXT": table_text
                 })
 
@@ -379,8 +386,9 @@ class G1IOUtils:
             if len(row) < 3:
                 continue
 
-            hlr_id = row[0].strip()
-            sys_id = row[2].strip()
+            hlr_id = G1IOUtils.normalize_id(row[0])
+            sys_id = G1IOUtils.normalize_id(row[2])
+
 
             if not hlr_id:
                 continue
@@ -398,3 +406,91 @@ class G1IOUtils:
         if not text:
             return ""
         return " ".join(str(text).split())
+    
+class G1_3_4IOUtils:
+    # io_utils.py
+    # Combined utilities for G1.3 + G1.4 (FINAL)
+
+    # =========================================================
+    # BASIC TEXT HELPERS (USED BY G1.3)
+    # =========================================================
+    def clean(text):
+        return text.replace("\n", " ").strip()
+
+    def norm(text):
+        return re.sub(r"\s+", " ", str(text).lower().strip())
+
+    def extract_label(text):
+        m = LABEL_RE.search(text or "")
+        return m.group(1) if m else None
+
+    def parse_bits(text):
+        nums = list(map(int, re.findall(r"\d+", str(text))))
+        if not nums:
+            return None, None
+        if len(nums) == 1:
+            return nums[0], nums[0]
+        return min(nums), max(nums)
+
+    # =========================================================
+    # G1.4 – FULL DOCX TEXT EXTRACTION
+    # =========================================================
+    def extract_docx_text(path):
+        """
+        Extracts ALL text from a DOCX:
+        - paragraphs
+        - table cells
+        """
+        doc = Document(path)
+        parts = []
+
+        for p in doc.paragraphs:
+            if p.text.strip():
+                parts.append(p.text.strip())
+
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    if cell.text.strip():
+                        parts.append(cell.text.strip())
+
+        return "\n".join(parts)
+
+    # =========================================================
+    # G1.4 – REQUIREMENT EXTRACTION (HLR / SYS)
+    # =========================================================
+    def extract_requirements(text):
+        """
+        Extracts requirements in format:
+        SCU_xxx_ID → normalized text
+        """
+        reqs = {}
+        lines = [l.strip() for l in text.splitlines() if l.strip()]
+        i = 0
+
+        while i < len(lines):
+            m = REQ_ID_RE.match(lines[i])
+            if m:
+                rid = m.group(1)
+                lookahead = " ".join(lines[i:i+5]).lower()
+
+                if re.search(r"\b(shall|should|must)\b", lookahead):
+                    buf = []
+                    i += 1
+                    while i < len(lines) and not REQ_ID_RE.match(lines[i]):
+                        buf.append(lines[i])
+                        i += 1
+                    reqs[rid] = norm(" ".join(buf))
+                    continue
+            i += 1
+
+        return reqs
+
+    # =========================================================
+    # G1.4 – LABEL EXTRACTION FROM TEXT
+    # =========================================================
+    def extract_labels(text):
+        return {
+            m for m in LABEL_RE.findall(text or "")
+            if m.isdigit() and 0 < int(m) <= 377
+        }

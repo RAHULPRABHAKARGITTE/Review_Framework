@@ -20,6 +20,7 @@ def explain_mismatch(sys_text: str, hlr_text: str, issues: str) -> str:
 
     prompt = f"""
     You are a safety-critical avionics requirements reviewer.
+    You are explaining a requirements compliance failure.
 
     Explain the mismatch briefly and technically.
 
@@ -31,6 +32,13 @@ def explain_mismatch(sys_text: str, hlr_text: str, issues: str) -> str:
 
     DETECTED ISSUES:
     {issues}
+
+    Explain:
+    1. What exactly differs
+    2. Where it differs (conditions, branches, clauses)
+    3. Whether behavior is missing, altered, or split across requirements
+    4. Do NOT infer new mismatches
+    5. Do NOT evaluate expressions numerically
 
     Rules:
     - Max 5 sentences

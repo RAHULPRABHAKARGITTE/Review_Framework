@@ -1,4 +1,5 @@
 import re
+import os
 
 # =========================================================
 # SHARED REGEX
@@ -79,6 +80,14 @@ class G4Config:
 # =========================================================
 # G1 CONFIG
 # =========================================================
+
+# =========================================================
+# REGEX
+# =========================================================
+REQ_ID_RE = re.compile(r"^(SCU_[A-Z_]+_\d+)\b")
+LABEL_RE = re.compile(r"\b([0-3]?[0-7]{2})\b")
+
+
 class G1Config:
     HLR_DOCX = "SCU_SRS.docx"
     SYS_DOCX = "SCU_SES.docx"
@@ -88,17 +97,20 @@ class G1Config:
 
     G1_3_OUTPUT = "G1_3_ARINC_Comparison.xlsx"
     G1_4_OUTPUT = "G1_4_Requirement_Review.xlsx"
+    G1_3_4_SUMMARY_OUTPUT = "G1_3_4_Summary.xlsx"
 
     REQ_ID_RE = r"(SCU_STC_SRS_\d+)"
     LABEL_RE = r"\b([0-7]{1,3})\b"
 
-    SIM_MATCH = 0.75
-    SIM_POTENTIAL = 0.50
+    SIM_MATCH = 0.85
+    SIM_POTENTIAL = 0.65
 
     TERM_SYNONYMS = {
-        "transmit": ["send", "tx"],
-        "receive": ["rx", "read"],
-        "interval": ["rate", "frequency"]
+        "transmission interval": ["update rate", "refresh rate", "output rate"],
+        "interface": ["bus", "port", "connection"],
+        "signal": ["data", "parameter"],
+        "receiver": ["destination", "sink"],
+        "transmitter": ["source", "sender"],
     }
 
     """
@@ -271,6 +283,22 @@ class G1Config:
         "PARTIAL",
         "MISALIGNED"
     ]
+
+    REAL_FINDING_KEYS = (
+    "TRACEABILITY_MISSING",
+    "TRACEABILITY_EXTRA",
+    "NUMERIC_MISMATCH",
+    "COMPARATOR_MISMATCH",
+    "BOOLEAN_POLARITY_MISMATCH",
+    "CONDITION_MISSING",
+    "CONDITION_EXTRA",
+    "POTENTIAL_LOGIC_DRIFT",
+    "THRESHOLD_MISMATCH",
+    "FORMULA_MISMATCH",
+    "ELSE_MISSING",
+    "ELSEIF_MISSING",
+    "ALGORITHM_BRANCH_MISSING",
+)
 
     # ============================================================
     # REFINEMENT CLASSIFICATION (SECOND TIER)
