@@ -35,7 +35,6 @@ NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
 ASSIGN_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$")
 
 
-
 def _canon_text(text: str) -> str:
     """
     Canonicalize text for comparisons while preserving semantics:
@@ -46,6 +45,28 @@ def _canon_text(text: str) -> str:
     t = t.replace("\u00a0", " ")   # non-breaking spaces
     t = t.replace("_", " ")       # IMPORTANT FIX
     return t
+
+
+def _canon_for_state(text: str) -> str:
+    """
+    Canonicalize text for state parser:
+    - replace underscores with spaces
+    - collapse multiple spaces
+    - normalize END IF -> ENDIF and ' :=' -> '='
+    - normalize typical condition wording (optional but helps)
+    """
+    t = (text or "")
+    t = t.replace("\u00a0", " ")
+    t = t.replace("_", " ")
+    t = re.sub(r"\s+", " ", t)
+    # normalize END IF to ENDIF because some parsers look for ENDIF only
+    t = re.sub(r"\bEND\s+IF\b", "ENDIF", t, flags=re.IGNORECASE)
+    # normalize assignment operator
+    t = t.replace(" := ", " = ").replace(":=", " = ")
+    # optional: normalize condition phrasing
+    t = re.sub(r"\ba\s+failure\s+is\s+detected\b", "failure detected", t, flags=re.IGNORECASE)
+    t = re.sub(r"\ba\s+critical\s+failure\s+is\s+detected\b", "critical failure detected", t, flags=re.IGNORECASE)
+    return t.strip()
 
 
 def normalize_expr(expr: str) -> str:
@@ -121,16 +142,27 @@ def compare_thresholds(sys_text: str, sw_text: str, tol=1e-3, missing_gap=5.0):
     return missing, mismatched
 
 
+# place these compiled regexes near the top with others if you prefer
+ELSEIF_ONLY_RE = re.compile(r"\bELSE\s+IF\b", re.IGNORECASE)
+ELSE_ONLY_RE   = re.compile(r"\bELSE\b(?!\s*IF\b)", re.IGNORECASE)  # ELSE not followed by IF
+ENDIF_RE       = re.compile(r"\bEND\s*IF\b|\bENDIF\b", re.IGNORECASE)
+
+
 def count_branches(text: str):
     """
-    Count IF/ELSE IF/ELSE/END IF.
+    Count IF/ELSE IF/ELSE/END IF or ENDIF (tolerant).
     """
-    t = _canon_text(text).upper()
+    
+    t = _canon_text(text)
+    # normalize END IF -> ENDIF for stability (but we also regex both)
+    t = re.sub(r"\bEND\s+IF\b", "ENDIF", t, flags=re.IGNORECASE)
+    t_u = t.upper()
+
     return {
-        "IF": len(re.findall(r"\bIF\b", t)),
-        "ELSEIF": len(re.findall(r"\bELSE\s+IF\b", t)),
-        "ELSE": len(re.findall(r"\bELSE\b", t)),
-        "ENDIF": len(re.findall(r"\bEND\s+IF\b", t)),
+        "IF":     len(re.findall(r"\bIF\b", t_u)),
+        "ELSEIF": len(ELSEIF_ONLY_RE.findall(t_u)),
+        "ELSE":   len(ELSE_ONLY_RE.findall(t_u)),
+        "ENDIF":  len(re.findall(r"\bENDIF\b", t_u)),  # already normalized
     }
 
 
@@ -406,9 +438,22 @@ def check_g1(system_reqs, hlr_reqs, trace_links):
         # 3) state diagram
         state_result = G1Config.PASS
         state_comment = ""
-        if is_state_diagram_requirement(sys_req) and is_state_diagram_requirement(merged_hlr_req):
-            sys_model = extract_state_model(sys_req)
-            hlr_model = extract_state_model(merged_hlr_req)
+
+        # Make state-friendly copies
+        sys_req_state = dict(sys_req)
+        hlr_req_state = dict(merged_hlr_req)
+
+        sys_text_state = _canon_for_state(sys_req.get("TEXT_RAW") or sys_req.get("TEXT", ""))
+        hlr_text_state = _canon_for_state(merged_hlr_req.get("TEXT_RAW") or merged_hlr_req.get("TEXT", ""))
+
+        sys_req_state["TEXT_RAW"] = sys_text_state
+        sys_req_state["TEXT"]     = sys_text_state
+        hlr_req_state["TEXT_RAW"] = hlr_text_state
+        hlr_req_state["TEXT"]     = hlr_text_state
+
+        if is_state_diagram_requirement(sys_req_state) and is_state_diagram_requirement(hlr_req_state):
+            sys_model = extract_state_model(sys_req_state)
+            hlr_model = extract_state_model(hlr_req_state)
             if sys_model and hlr_model:
                 state_result, state_comment = compare_state_models(sys_model, hlr_model)
 
@@ -425,46 +470,60 @@ def check_g1(system_reqs, hlr_reqs, trace_links):
             "partial_coverage": None,
         }
 
-
         # FINAL decision
         final_result = G1Config.FAIL if G1Config.FAIL in (
             g1_1_result, g1_2_result, state_result, intent_result
         ) else G1Config.PASS
 
-        # COMMENT = only real findings
-        comment_parts = [g1_1_comment, g1_2_comment, state_comment, intent_comment]
-        final_comment = " | ".join(c for c in comment_parts if c)
+        # COMMENT (human-facing) = only the 4 checker comments
+        final_comment = " | ".join(
+            p for p in [
+                g1_1_comment,
+                g1_2_comment,
+                state_comment,
+                intent_comment
+            ] if p
+        )
 
         # --------------------------------------------------------
         # EXTRA: Algorithm branch + threshold mismatch + formula mismatch
+        # Move these details to DEBUG (not COMMENT)
         # --------------------------------------------------------
 
-        # ELSE/branch missing
-        b_sys = count_branches(sys_text)
-        b_sw = count_branches(sw_text)
+        # Normalize branch counting
+        sys_text_for_branch = _canon_text(sys_text)
+        sw_text_for_branch  = _canon_text(sw_text)
 
+        b_sys = count_branches(sys_text_for_branch)
+        b_sw  = count_branches(sw_text_for_branch)
+
+        algo_debug = []
+
+        algo_debug.append(f"BRANCH_COUNTS SYS={b_sys} SW={b_sw}")
+        
+        # ELSE/ELSEIF deltas
         if b_sys["ELSE"] > b_sw["ELSE"]:
-            final_comment = (final_comment + " | " if final_comment else "") + \
-                "ELSE_MISSING: SYS has ELSE branch but SW missing ELSE branch"
+            algo_debug.append("ELSE_MISSING: SYS has ELSE; SW missing")
+            evidence["else_missing"] = True
         if b_sys["ELSEIF"] > b_sw["ELSEIF"]:
-            final_comment = (final_comment + " | " if final_comment else "") + \
-                f"ELSEIF_MISSING: SYS has {b_sys['ELSEIF']} ELSE IF branches, SW has {b_sw['ELSEIF']}"
+            algo_debug.append(f"ELSEIF_MISSING: SYS={b_sys['ELSEIF']} SW={b_sw['ELSEIF']}")
+            evidence["elseif_missing"] = True
 
         # threshold mismatch
         missing_thr, mismatched_thr = compare_thresholds(sys_text, sw_text)
         if mismatched_thr:
             pairs = ", ".join([f"{a}→{b}" for a, b in mismatched_thr])
-            final_comment = (final_comment + " | " if final_comment else "") + \
-                f"THRESHOLD_MISMATCH: SYS→SW ({pairs})"
+            algo_debug.append(f"THRESHOLD_MISMATCH: SYS→SW ({pairs})")
+            evidence["threshold_mismatch"] = mismatched_thr
         if missing_thr:
-            final_comment = (final_comment + " | " if final_comment else "") + \
-                f"ALGORITHM_BRANCH_MISSING: Missing thresholds in SW: {missing_thr}"
+            algo_debug.append(f"ALGORITHM_BRANCH_MISSING: {missing_thr}")
+            evidence["threshold_missing"] = missing_thr
 
         # formula mismatch (keeps 1/10.3 intact)
         fm = compare_assignments(sys_text, sw_text)
         if fm:
-            final_comment = (final_comment + " | " if final_comment else "") + \
-                "FORMULA_MISMATCH: " + "; ".join(fm[:3])
+            algo_debug.append("FORMULA_MISMATCH: " + "; ".join(fm[:3]))
+            evidence["formula_mismatch"] = fm[:3]
 
         # DEBUG column (never affects comment or llm)
         debug_str = ""
@@ -474,17 +533,19 @@ def check_g1(system_reqs, hlr_reqs, trace_links):
             system_reqs
         )
         if myver_debug.get("BEST_SYS_ID"):
-            debug_str = \
-                f"BEST_SYS_ID={myver_debug['BEST_SYS_ID']} " \
-                f"SIMILARITY={myver_debug['SIMILARITY']} " \
-                f"TERM_STATUS={myver_debug['TERM_STATUS']} " \
+            debug_str = (
+                f"BEST_SYS_ID={myver_debug['BEST_SYS_ID']} "
+                f"SIMILARITY={myver_debug['SIMILARITY']} "
+                f"TERM_STATUS={myver_debug['TERM_STATUS']} "
                 f"LABEL_STATUS={myver_debug.get('LABEL_STATUS', 'N/A')}"
+            )
             if myver_debug.get("LABEL_DEBUG"):
                 debug_str += f" | LABEL_DEBUG={myver_debug['LABEL_DEBUG']}"
 
-        # --------------------------------------------------------
-        # LLM EXPLANATION
-        # --------------------------------------------------------
+        # Append algorithm extras to DEBUG (not to COMMENT)
+        if algo_debug:
+            debug_str = (" | ".join([debug_str] + algo_debug)).strip() if debug_str else " | ".join(algo_debug)
+
         # --------------------------------------------------------
         # LLM EXPLANATION (ALWAYS FOR FAIL)
         # --------------------------------------------------------
@@ -497,7 +558,7 @@ def check_g1(system_reqs, hlr_reqs, trace_links):
                 issues=final_comment or "FAIL_WITHOUT_EXPLICIT_REASON",
                 evidence=evidence
             )
-            
+
         results.append({
             "SYS_ID": sys_id,
             "HLR_ID": merged_hlr_req["HLR_ID"],

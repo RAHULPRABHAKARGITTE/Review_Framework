@@ -269,6 +269,54 @@ class G1Config:
         "LLM_ERROR" : "LLM explanation failed."
     }
 
+    # Time units and normalization factors (ms baseline)
+    TIME_UNITS = ("us", "µs", "ms", "s", "min")
+    UNIT_TO_MS = {
+        "us": "0.001",
+        "µs": "0.001",
+        "ms": "1",
+        "s": "1000",
+        "min": "60000",
+    }
+
+    # Limits for numeric-drift reporting (to avoid noise on long blocks)
+    DRIFT_MAX_CONSTS = 25          # skip drift if more than this on SYS side
+    DRIFT_MIN_JACCARD = 0.60       # only report drift if Jaccard(sys, sw) < this
+
+    # Verbs that often signal “new feature” introductions at SW level
+    EXTRA_FEATURE_VERBS = [
+        "provide","compute","calculate","store","log","record","generate",
+        "report","publish","transmit","send","expose","offer","display","archive"
+    ]
+
+    # Extra-feature detection stopwords (kept minimal; adjust per domain)
+    EXTRA_FEATURE_STOPWORDS = {
+        "the","this","that","shall","will","must","system","software","hardware",
+        "mode","value","data","signal","table","label","state","monitor","parameter"
+    }
+
+    # Optional: Primary key hints for tables (first match used)
+    TABLE_PRIMARY_KEYS = ["id", "label", "name", "signal", "parameter"]
+
+    # Optional: ARINC table header hints to improve diagnostics
+    ARINC_HEADERS = {"label","sdi","ssm","bit","lsb","msb","name","description","units"}
+
+    # Output grouping titles for findings
+    GROUP_TITLES = {
+        "BOOLEAN_POLARITY_MISMATCH": "Booleans",
+        "POTENTIAL_LOGIC_DRIFT": "Numeric constants",
+        "NUMERIC_MISMATCH": "Numerics & Timing",
+        "INCOMPLETE_SYSTEM_COVERAGE": "Coverage",
+        "TRACEABILITY_MISSING": "Traceability (Missing)",
+        "TRACEABILITY_EXTRA": "Traceability (Extra)",
+        "STATE_DIAGRAM_MISMATCH": "State/Mode",
+        "CONDITION_MISSING": "Conditions (Missing)",
+        "CONDITION_EXTRA": "Conditions (Extra)",
+    }
+
+    # When the checker has nothing comparable to evaluate, prefer REVIEW
+    # You already defined: PASS/FAIL/REVIEW and REFINEMENT_*; we’ll reuse them.
+
     # ============================================================
     # LLM INTEGRATION CONTROL (REVIEW ASSIST ONLY)
     # ============================================================
@@ -298,7 +346,7 @@ class G1Config:
     "ELSE_MISSING",
     "ELSEIF_MISSING",
     "ALGORITHM_BRANCH_MISSING",
-)
+    )
 
     # ============================================================
     # REFINEMENT CLASSIFICATION (SECOND TIER)

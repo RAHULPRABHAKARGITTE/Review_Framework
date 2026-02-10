@@ -14,6 +14,7 @@ IMPORTANT:
 
 import re
 from config import G1Config
+from g1.nlp_normalize import normalize_event as _normalize_event, normalize_text
 
 
 # ============================================================
@@ -46,8 +47,8 @@ def is_state_diagram_requirement(req: dict) -> bool:
     if any(k in text for k in STATE_KEYWORDS):
         return True
 
-    # UML arrow in text
-    if "-->" in text:
+    # UML arrow in text (HTML-escaped)
+    if "-->" in text or "--&gt;" in text:
         return True
 
     # Table header signature (more reliable than random table)
@@ -67,65 +68,54 @@ IF_RE = re.compile(r"\bIF\s+(.+?)\s+THEN\b", re.IGNORECASE)
 # STATE := X
 STATE_ASSIGN_RE = re.compile(r"\bSTATE\s*:?=\s*([A-Z0-9_]+)\b", re.IGNORECASE)
 
-# INITIAL STATE X  / INITIAL: X / INIT STATE: X
+# INITIAL STATE X  / INITIAL_STATE = X / INITIAL: X / INIT STATE: X
 INITIAL_RE = re.compile(
-    r"\b(?:INITIAL\s+STATE|INITIAL|INIT(?:IAL)?\s+STATE)\s*[:=]?\s*([A-Z0-9_]+)\b",
+    r"\b(?:INITIAL(?:\s+|_)STATE|INITIAL|INIT(?:IAL)?(?:\s+|_)STATE)\s*[:=]?\s*([A-Z0-9_]+)\b",
     re.IGNORECASE
 )
 
-# Try to infer FROM state from IF condition
+# Try to infer FROM state from IF condition, e.g., IF STATE = NORMAL THEN ...
 FROM_STATE_IN_IF_RE = re.compile(
-    r"\b(?:CURRENT_STATE|STATE)\s*(?:=|==|IS|IN)\s*([A-Z0-9_]+)\b",
+    r"\b(?:CURRENT(?:\s+|_)STATE|STATE)\s*(?:=|==|IS|IN)\s*([A-Z0-9_]+)\b",
     re.IGNORECASE
 )
 
-# UML patterns
-UML_SIMPLE_RE = re.compile(r"\b([A-Z0-9_]+)\s*-->\s*([A-Z0-9_]+)\b", re.IGNORECASE)
-UML_EVENT_RE  = re.compile(r"\b([A-Z0-9_]+)\s*--\s*(.+?)\s*-->\s*([A-Z0-9_]+)\b", re.IGNORECASE)
+# UML patterns (text may be HTML-escaped by docx extractor)
+UML_SIMPLE_RE = re.compile(r"\b([A-Z0-9_]+)\s*--(?:>|&gt;)\s*([A-Z0-9_]+)\b", re.IGNORECASE)
+UML_EVENT_RE  = re.compile(r"\b([A-Z0-9_]+)\s*--\s*(.+?)\s*--(?:>|&gt;)\s*([A-Z0-9_]+)\b", re.IGNORECASE)
 
 
 # ============================================================
 # NORMALIZATION
 # ============================================================
 
-# def _normalize_state(s: str) -> str:
-#     s = (s or "").strip().upper()
-#     s = re.sub(r"\s+", "_", s)
-#     return s
-
-
-# def _normalize_event(ev: str) -> str:
-#     """
-#     Event normalization:
-#     - uppercase
-#     - collapse whitespace
-#     - normalize operators
-#     - remove extra parentheses spacing
-#     """
-#     if not ev:
-#         return ""
-
-#     ev = ev.strip().upper()
-#     ev = " ".join(ev.split())
-
-#     # Normalize common operator variants
-#     ev = ev.replace("==", "=")
-#     ev = ev.replace(" IS ", " = ")
-#     ev = ev.replace(" IN ", " = ")
-
-#     # Remove repeated parentheses spaces
-#     ev = ev.replace("( ", "(").replace(" )", ")")
-
-#     return ev
-
-from g1.nlp_normalize import normalize_event as _normalize_event, normalize_text
-
 def _normalize_state(s: str) -> str:
-    s = normalize_text(s).upper()
-    return re.sub(r"\s+", "_", s)
-# _normalize_event is now provided by nlp_normalize.normalize_event
+    """
+    - Use your shared normalize_text (handles punctuation/spacing)
+    - Uppercase
+    - Convert spaces to underscores
+    """
+    s = normalize_text(s or "").upper()
+    return re.sub(r"\s+", "_", s).strip("_")
 
-# _normalize_event is now provided by nlp_normalize.normalize_event
+
+def _norm_event(ev: str) -> str:
+    """
+    Wrapper around your nlp_normalize.normalize_event with extra tolerances:
+
+    - underscores → spaces (so 'failure_detected' == 'failure detected')
+    - drop articles ('a', 'an', 'the')
+    - collapse 'is detected' → 'detected'
+    - normalize spacing and uppercase
+    """
+    ev = (ev or "")
+    ev = ev.replace("_", " ")
+    ev = _normalize_event(ev)  # keep your existing normalization first
+    # Additional harmonization
+    ev = re.sub(r"\b(a|an|the)\b", " ", ev, flags=re.IGNORECASE)
+    ev = re.sub(r"\bis\s+detected\b", "detected", ev, flags=re.IGNORECASE)
+    ev = re.sub(r"\s+", " ", ev).strip().upper()
+    return ev
 
 
 def _is_separator_row(cols: list[str]) -> bool:
@@ -156,9 +146,9 @@ def extract_state_model(req: dict) -> dict | None:
     text = (req.get("TEXT") or "")
     table = (req.get("TABLE_TEXT") or "")
 
-    states = set()
-    transitions = set()
-    initial = None
+    states: set[str] = set()
+    transitions: set[tuple] = set()
+    initial: str | None = None
     unknown_from_count = 0
 
     # ---- Initial state
@@ -180,8 +170,9 @@ def extract_state_model(req: dict) -> dict | None:
         # IF ... THEN ...
         m = IF_RE.search(line)
         if m:
-            current_event = _normalize_event(m.group(1))
-            m2 = FROM_STATE_IN_IF_RE.search(m.group(1))
+            cond = m.group(1)
+            current_event = _norm_event(cond)
+            m2 = FROM_STATE_IN_IF_RE.search(cond)
             current_from_state = _normalize_state(m2.group(1)) if m2 else None
             continue
 
@@ -198,25 +189,24 @@ def extract_state_model(req: dict) -> dict | None:
                 states.add(to_state)
             continue
 
-        # reset on END IF / END / ENDIF
+        # reset on END IF / END / ENDIF (tolerate both with/without space)
         if line.upper().startswith(("END IF", "ENDIF", "END")):
             current_event = None
             current_from_state = None
 
-    # ---- UML arrows (A --> B)
+    # ---- UML arrows (A --> B) and (A -- EVENT --> B)
     for frm, to in UML_SIMPLE_RE.findall(text):
-        frm = _normalize_state(frm)
-        to = _normalize_state(to)
-        transitions.add((frm, "UML", to))
-        states.update([frm, to])
+        frm_n = _normalize_state(frm)
+        to_n = _normalize_state(to)
+        transitions.add((frm_n, "UML", to_n))
+        states.update([frm_n, to_n])
 
-    # ---- UML arrows with event (A -- EVENT --> B)
     for frm, event, to in UML_EVENT_RE.findall(text):
-        frm = _normalize_state(frm)
-        to = _normalize_state(to)
-        event = _normalize_event(event)
-        transitions.add((frm, event, to))
-        states.update([frm, to])
+        frm_n = _normalize_state(frm)
+        to_n = _normalize_state(to)
+        ev_n = _norm_event(event)
+        transitions.add((frm_n, ev_n, to_n))
+        states.update([frm_n, to_n])
 
     # ---- Table transitions FROM | EVENT | TO
     for raw_line in table.splitlines():
@@ -224,9 +214,7 @@ def extract_state_model(req: dict) -> dict | None:
             continue
 
         cols = [c.strip() for c in raw_line.split("|")]
-
-        # Remove empty columns due to leading/trailing |
-        cols = [c for c in cols if c.strip()]
+        cols = [c for c in cols if c.strip()]  # drop empties
 
         if len(cols) < 3:
             continue
@@ -241,7 +229,7 @@ def extract_state_model(req: dict) -> dict | None:
             continue
 
         frm = _normalize_state(cols_u[0])
-        event = _normalize_event(cols_u[1])
+        event = _norm_event(cols_u[1])
         to = _normalize_state(cols_u[2])
 
         if not frm or not to:
@@ -277,9 +265,11 @@ def compare_state_models(sys_model: dict, hlr_model: dict):
     Conservative rule:
     - If HLR introduces states or transitions not in SYS → FAIL
     - If HLR misses SYS transitions/states → FAIL
-    - If parsing is incomplete (too many unknown FROM transitions), add REVIEW-like note but still FAIL only if clear mismatch
+    - If parsing is incomplete (unknown FROM-state transitions), it should NOT hard FAIL by itself.
+      Return REVIEW with a note if everything else matches.
     """
     findings = []
+    notes = []
 
     sys_states = sys_model.get("states", set())
     hlr_states = hlr_model.get("states", set())
@@ -314,15 +304,21 @@ def compare_state_models(sys_model: dict, hlr_model: dict):
     if extra_trans:
         findings.append(f"Extra transitions in software: {sorted(extra_trans)}")
 
-    # ---- Unknown FROM states are not automatically FAIL
-    # They indicate extraction uncertainty.
+    # ---- Unknown FROM states in HLR indicate extraction uncertainty ONLY
     unknown_from = {t for t in hlr_trans if t[0] is None}
     if unknown_from:
-        findings.append(
+        notes.append(
             f"Software has transitions with unknown FROM-state (extraction uncertainty): count={len(unknown_from)}"
         )
 
     if findings:
-        return G1Config.FAIL, " | ".join(findings)
+        # Real mismatches → FAIL, but include uncertainty notes if any
+        msg = " | ".join(findings + notes) if notes else " | ".join(findings)
+        return G1Config.FAIL, msg
+
+    # No real mismatches
+    if notes:
+        # Don’t fail: return REVIEW so it doesn’t turn the overall result into FAIL
+        return G1Config.REVIEW, " | ".join(notes)
 
     return G1Config.PASS, "State models are aligned."
