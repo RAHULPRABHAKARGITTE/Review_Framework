@@ -485,6 +485,22 @@ def check_g1(system_reqs, hlr_reqs, trace_links):
             ] if p
         )
 
+        
+        # --- OVERRIDE: fail the row if algorithm thresholds flagged issues in DEBUG ---
+        has_thr_mismatch = bool(evidence.get("threshold_mismatch"))
+        has_thr_missing  = bool(evidence.get("threshold_missing"))
+
+        if final_result != G1Config.FAIL and (has_thr_mismatch or has_thr_missing):
+            final_result = G1Config.FAIL
+            extra_note = "Algorithm threshold mismatch/missing detected; see DEBUG."
+            final_comment = (final_comment + " | " + extra_note) if final_comment else extra_note
+
+
+        # --------------------------------------------------------
+        # EXTRA: Algorithm branch + threshold mismatch + formula mismatch
+        # Move these details to DEBUG (not COMMENT)
+        # --------------------------------------------------------
+
         # --------------------------------------------------------
         # EXTRA: Algorithm branch + threshold mismatch + formula mismatch
         # Move these details to DEBUG (not COMMENT)
@@ -498,9 +514,8 @@ def check_g1(system_reqs, hlr_reqs, trace_links):
         b_sw  = count_branches(sw_text_for_branch)
 
         algo_debug = []
-
         algo_debug.append(f"BRANCH_COUNTS SYS={b_sys} SW={b_sw}")
-        
+
         # ELSE/ELSEIF deltas
         if b_sys["ELSE"] > b_sw["ELSE"]:
             algo_debug.append("ELSE_MISSING: SYS has ELSE; SW missing")
@@ -546,17 +561,34 @@ def check_g1(system_reqs, hlr_reqs, trace_links):
         if algo_debug:
             debug_str = (" | ".join([debug_str] + algo_debug)).strip() if debug_str else " | ".join(algo_debug)
 
+        # ------------------ OVERRIDE (Option B): Algorithm thresholds ------------------
+        # Now that 'evidence' and 'debug_str' are fully populated, decide if we must flip to FAIL
+        has_thr_mismatch = bool(evidence.get("threshold_mismatch"))
+        has_thr_missing  = bool(evidence.get("threshold_missing"))
+
+        # Safety fallback: if evidence wasn't set, scan the debug string
+        dbg_upper = (debug_str or "").upper()
+        if not has_thr_mismatch and "THRESHOLD_MISMATCH" in dbg_upper:
+            has_thr_mismatch = True
+        if not has_thr_missing and ("ALGORITHM_BRANCH_MISSING" in dbg_upper or "BRANCH_MISSING" in dbg_upper):
+            has_thr_missing = True
+
+        if final_result != G1Config.FAIL and (has_thr_mismatch or has_thr_missing):
+            final_result = G1Config.FAIL
+            extra_note = "Algorithm threshold mismatch/missing detected; see DEBUG."
+            final_comment = (final_comment + " | " + extra_note) if final_comment else extra_note
+
         # --------------------------------------------------------
         # LLM EXPLANATION (ALWAYS FOR FAIL)
         # --------------------------------------------------------
         llm_explanation = ""
-
         if G1Config.LLM_ENABLED and final_result == G1Config.FAIL:
             llm_explanation = explain_mismatch(
                 sys_text=sys_text,
                 hlr_text=sw_text,
                 issues=final_comment or "FAIL_WITHOUT_EXPLICIT_REASON",
-                evidence=evidence
+                evidence=evidence,
+                debug=debug_str,     # <-- include debug so your template can show it
             )
 
         results.append({

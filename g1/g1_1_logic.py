@@ -2,7 +2,6 @@ from config import G1Config
 import re
 from decimal import Decimal, ROUND_HALF_UP
 
-
 # ============================================================
 # FAILSAFE LEVEL EXTRACTION
 # ============================================================
@@ -26,8 +25,9 @@ MONITOR_LIST_TRIGGER_PATTERN = re.compile(
     re.IGNORECASE
 )
 
+# Stop as soon as we hit a NOTE (Note, Note1, Note2...), or document metadata
 STOP_SECTION_PATTERN = re.compile(
-    r"^\s*(note\b|object type\b|source\b|verification method\b|ref\b|references\b)",
+    r"^\s*(note\b|note\d+\b|object type\b|reqt source\b|source\b|verification method\b|ref\b|references\b)",
     re.IGNORECASE
 )
 
@@ -62,7 +62,8 @@ def extract_monitor_list_block(text: str) -> set:
         if STOP_SECTION_PATTERN.match(ln):
             break
 
-        if "object type" in ln.lower() or "verification method" in ln.lower():
+        # hard stop if paragraph turns into metadata
+        if ("object type" in ln.lower()) or ("verification method" in ln.lower()):
             break
 
         buffer.append(ln)
@@ -76,8 +77,11 @@ def extract_monitor_list_block(text: str) -> set:
     if bullet_lines:
         for ln in bullet_lines:
             item = BULLET_PATTERN.sub("", ln).strip(" ,;.")
+            itl = item.lower()
+            if itl.startswith("note"):
+                continue
             if len(item) >= 4:
-                found.add(item.lower())
+                found.add(itl)
         return found
 
     # Comma/semicolon list
@@ -85,13 +89,18 @@ def extract_monitor_list_block(text: str) -> set:
     parts = re.split(r"[;,]", joined)
     for p in parts:
         item = p.strip(" ,;.")
+        itl = item.lower()
+        if itl.startswith("note"):
+            continue
         if len(item) >= 4:
-            found.add(item.lower())
+            found.add(itl)
 
     return found
 
-
 def extract_monitor_set(text: str) -> set:
+    """
+    Normalizes a possible monitor list and otherwise falls back to keyword presence.
+    """
     structured = extract_monitor_list_block(text)
     if structured:
         return structured
@@ -109,6 +118,10 @@ def extract_monitor_set(text: str) -> set:
 # ============================================================
 
 def normalize_table(table_text: str) -> set:
+    """
+    Normalizes a table-like text into a set of row strings,
+    to be used only as a presence signal for comparability.
+    """
     if not table_text:
         return set()
     rows = []
@@ -123,8 +136,8 @@ def normalize_table(table_text: str) -> set:
 # ARINC LABEL HANDLING
 # ============================================================
 
-ARINC_LABEL_PATTERN = re.compile(r"\b0?[0-7]{3}\b")
-ARINC_TABLE_HINT = re.compile(r"\blabel\b", re.IGNORECASE)
+ARINC_LABEL_PATTERN = re.compile(r"\b0?[0-7]{3}\b")         # Finds all octal label tokens of 3 digits
+ARINC_TABLE_HINT = re.compile(r"\blabel\b", re.IGNORECASE)  # If a table contains the word “label”.
 
 def extract_arinc_labels_anywhere(text: str, table_text: str) -> set:
     """
@@ -174,9 +187,9 @@ TOLERANCE_PATTERN = re.compile(
     re.IGNORECASE
 )
 
-EXPRESSION_NUMBER_PATTERN = re.compile(
-    r"(?:(?:[-+]?\d+\.\d+(?:e[-+]?\d+)?)|(?:[-+]?\d+(?:e[-+]?\d+)?))",
-    re.IGNORECASE
+# Accept exponent numbers anywhere in body text for *drift* extraction
+EXPR_NUM_RE = re.compile(
+    r"(?<![A-Za-z0-9_])(-?\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?)(?![A-Za-z0-9_])"
 )
 
 # -------- ELSE default polarity extraction --------
@@ -204,7 +217,6 @@ def _extract_else_default(text: str) -> str | None:
     if m:
         return m.group(1).upper()
 
-    # Heuristic: if ELSE 'remains unchanged' exists, use INITIAL_STATE as default
     if re.search(r"\bELSE\b.*?\bremains\s+unchanged\b", t, flags=re.IGNORECASE | re.DOTALL):
         m2 = INITIAL_BOOL_INLINE_RE.search(t)
         if m2:
@@ -212,7 +224,17 @@ def _extract_else_default(text: str) -> str | None:
     return None
 
 
-# ---------- Pretty formatting for timing (no scientific notation) ----------
+# ---------- Helpers to avoid scientific notation ----------
+
+def _to_plain_str(d: Decimal, q: str = "0.001") -> str:
+    """
+    Render Decimal as plain string (no exponent), trimmed zeros.
+    """
+    dq = d.quantize(Decimal(q))
+    s = format(dq, "f")
+    if "." in s:
+        s = s.rstrip("0").rstrip(".")
+    return s or "0"
 
 def _fmt_ms(ms: Decimal) -> str:
     """
@@ -224,43 +246,56 @@ def _fmt_ms(ms: Decimal) -> str:
     """
     if ms is None:
         return ""
-    # quantize to 0.001ms to avoid exponent and normalize
-    ms_q = ms.quantize(Decimal("0.001")).normalize()
+    ms_q = ms.quantize(Decimal("0.001"))
     if ms_q >= Decimal("1000"):
-        s = (ms_q / Decimal("1000")).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP).normalize()
-        s_str = format(s, "f")
-        if "." in s_str:
-            s_str = s_str.rstrip("0").rstrip(".")
-        return f"{s_str} s"
-    ms_str = format(ms_q, "f")
-    if "." in ms_str:
-        ms_str = ms_str.rstrip("0").rstrip(".")
-    return f"{ms_str} ms"
+        s = (ms_q / Decimal("1000")).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+        return f"{_to_plain_str(s)} s"
+    return f"{_to_plain_str(ms_q)} ms"
+
+_NUM_AT_END_RE = re.compile(r"(?P<num>-?\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?)$")
 
 def _fmt_ms_value_token(token: str) -> str:
     """
-    token looks like '<= 500' (ms) or '200' etc. Extract number and format to 'ms'/'s'.
+    token looks like '<= 500' (ms) or '200' or '<= 1.5E+3'. Extract number and format.
     """
     token = (token or "").strip()
-    m = re.search(r"(?P<num>-?\d+(?:\.\d+)?)$", token)
+    m = _NUM_AT_END_RE.search(token)
     if not m:
         return token
-    num = Decimal(m.group("num"))
+    num = Decimal(m.group("num").replace(" ", ""))
     pretty = _fmt_ms(num)
     lead = token[:token.rfind(m.group("num"))].strip()
     return f"{lead} {pretty}".strip()
 
+def _sanitize_exponents(text: str) -> str:
+    """
+    Last-mile sanitizer: convert any exponent number left in the final grouped
+    message into a plain decimal (keeps surrounding text/units).
+    """
+    if not text:
+        return text
+    def _repl(m):
+        try:
+            d = Decimal(m.group(1).replace(" ", ""))
+            return _to_plain_str(d)
+        except Exception:
+            return m.group(1)
+    return re.sub(r"(-?\d+(?:\.\d+)?(?:[eE]\s*[+\-]?\s*\d+))", _repl, text)
+
+
+# ---------- Time extraction: store plain, non-exponent numbers ----------
 
 def extract_time_values(text: str) -> set:
-    """Single time values with optional comparators, normalized to ms (as Decimal string)."""
+    """Single time values with optional comparators, normalized to ms (stored as plain strings)."""
     values = set()
     text = text or ""
     for m in TIME_PATTERN.finditer(text):
         cmp_op = (m.group("cmp") or "").strip()
         num = Decimal(m.group("num"))
         unit = m.group("unit").lower()
-        ms = (num * _unit_factor_ms(unit)).normalize()
-        values.add(f"{cmp_op} {ms}".strip())
+        ms = num * _unit_factor_ms(unit)
+        ms_s = _to_plain_str(ms)  # plain string, no exponent
+        values.add(f"{cmp_op} {ms_s}".strip())
     return values
 
 def extract_time_ranges_and_tolerances(text: str) -> dict:
@@ -271,33 +306,51 @@ def extract_time_ranges_and_tolerances(text: str) -> dict:
         a = Decimal(m.group("a")); b = Decimal(m.group("b"))
         unit = m.group("unit").lower()
         f = _unit_factor_ms(unit)
-        out["ranges"].append((str((a*f).normalize()), str((b*f).normalize())))
+        out["ranges"].append((_to_plain_str(a*f), _to_plain_str(b*f)))
 
     for m in TOLERANCE_PATTERN.finditer(text):
         center = Decimal(m.group("num")); unit = m.group("unit").lower()
         t = Decimal(m.group("t")); tunit = m.group("tunit").lower()
-        center_ms = (center * _unit_factor_ms(unit)).normalize()
+        center_ms = _to_plain_str(center * _unit_factor_ms(unit))
         if tunit == "%":
-            out["tolerances"].append({"center_ms": str(center_ms), "tol_ms": None, "percent": str(t.normalize())})
+            out["tolerances"].append({"center_ms": center_ms, "tol_ms": None, "percent": _to_plain_str(t)})
         else:
-            tol_ms = (t * _unit_factor_ms(tunit)).normalize()
-            out["tolerances"].append({"center_ms": str(center_ms), "tol_ms": str(tol_ms), "percent": None})
+            tol_ms = _to_plain_str(t * _unit_factor_ms(tunit))
+            out["tolerances"].append({"center_ms": center_ms, "tol_ms": tol_ms, "percent": None})
     return out
 
 def extract_expression_numbers(text: str) -> set:
+    """
+    Extract numeric literals (including exponent) and render as plain strings (no exponent).
+    """
     nums = set()
     text = text or ""
-    for raw in EXPRESSION_NUMBER_PATTERN.findall(text):
-        raw = raw.strip().lower().replace("+", "")
+    for raw in EXPR_NUM_RE.findall(text):
         try:
-            nums.add(str(Decimal(raw).normalize()))
+            d = Decimal(raw.replace(" ", ""))
+            nums.add(_to_plain_str(d))
         except Exception:
             nums.add(raw)
     return nums
 
 def format_numeric_drift(sys_nums: set, hlr_nums: set) -> str:
-    missing = sorted(sys_nums - hlr_nums)
-    extra = sorted(hlr_nums - sys_nums)
+    """
+    Render drift with plain decimals (no E+).
+    """
+    def _plain_sorted(ss: set) -> list[str]:
+        out = []
+        for s in ss:
+            try:
+                out.append(_to_plain_str(Decimal(str(s))))
+            except Exception:
+                out.append(str(s))
+        try:
+            return [x for _, x in sorted((Decimal(x), x) for x in out)]
+        except Exception:
+            return sorted(out)
+
+    missing = _plain_sorted(sys_nums - hlr_nums)
+    extra   = _plain_sorted(hlr_nums - sys_nums)
     parts = []
     if missing:
         parts.append(f"Missing in software: {', '.join(missing)}")
@@ -308,7 +361,7 @@ def format_numeric_drift(sys_nums: set, hlr_nums: set) -> str:
 def compare_timing(sys_text: str, hlr_text: str, findings: list):
     """
     Produce actionable timing diffs across values, ranges, and tolerances.
-    Render values human-readably (e.g., '1.5 s', '200 ms').
+    Render values human-readably (e.g., '1.5 s', '200 ms'), never in exponent.
     """
     # values
     sys_vals = extract_time_values(sys_text); hlr_vals = extract_time_values(hlr_text)
@@ -324,8 +377,8 @@ def compare_timing(sys_text: str, hlr_text: str, findings: list):
 
     sys_ranges = set(sys_ext["ranges"]); hlr_ranges = set(hlr_ext["ranges"])
     if sys_ranges and sys_ranges != hlr_ranges:
-        sys_r_fmt = [ ( _fmt_ms(Decimal(a)), _fmt_ms(Decimal(b)) ) for (a,b) in sorted(sys_ranges) ]
-        hlr_r_fmt = [ ( _fmt_ms(Decimal(a)), _fmt_ms(Decimal(b)) ) for (a,b) in sorted(hlr_ranges) ]
+        sys_r_fmt = [ (_fmt_ms(Decimal(a)), _fmt_ms(Decimal(b)) ) for (a,b) in sorted(sys_ranges) ]
+        hlr_r_fmt = [ (_fmt_ms(Decimal(a)), _fmt_ms(Decimal(b)) ) for (a,b) in sorted(hlr_ranges) ]
         findings.append(("NUMERIC_MISMATCH",
                          f"Timing ranges differ: SYS={sys_r_fmt} vs SW={hlr_r_fmt}"))
 
@@ -337,7 +390,7 @@ def compare_timing(sys_text: str, hlr_text: str, findings: list):
         def _fmt_tol(t):
             c = _fmt_ms(Decimal(t[0])) if t[0] is not None else None
             if t[2]:   # percent tolerance
-                pct = str(Decimal(t[2]).normalize()).rstrip("0").rstrip(".")
+                pct = _to_plain_str(Decimal(t[2]))
                 return (c, f"{pct}%")
             if t[1]:   # absolute tolerance in ms
                 return (c, _fmt_ms(Decimal(t[1])))
@@ -349,7 +402,283 @@ def compare_timing(sys_text: str, hlr_text: str, findings: list):
 
 
 # ============================================================
-# BOOLEAN EXTRACTION
+# SSM (GENERALIZED, MULTI-STATE)
+# ============================================================
+
+# Equality: "SSM data is set to <state>", "SSM data equals <state>", "SSM data = <state>", "SSM data indicates <state>"
+SSM_EQ_STATES_RE = re.compile(
+    r"""
+    \bSSM\s+data\b
+    (?:\s+is\s+)?                          # optional 'is'
+    (?:
+        (?:set\s+to|equals?|=)\s*["']?(?P<state_eq>[A-Za-z_ \-/]+?)["']?   # equality forms
+      |
+        \s+indicates\s+["']?(?P<state_ind>[A-Za-z_ \-/]+?)["']?            # indicates form
+    )
+    \b
+    """,
+    re.IGNORECASE | re.VERBOSE
+)
+
+# Inequality: "SSM data != <state>", "SSM data not equal to <state>", "SSM data not set to <state>"
+SSM_NEQ_STATES_RE = re.compile(
+    r"""
+    \bSSM\s+data\b
+    (?:\s+is\s+)?                                     # optional 'is'
+    (?:
+        (?:!=|not\s+equal\s+to|not\s+set\s+to)\s*["']?(?P<state_neq>[A-Za-z_ \-/]+?)["']?
+    )
+    \b
+    """,
+    re.IGNORECASE | re.VERBOSE
+)
+
+def _normalize_ssm_state(raw: str) -> str | None:
+    """
+    Normalize raw SSM state text using G1Config.SSM_ALIASES first.
+    Falls back to UPPER_SNAKE_CASE so we don't drop previously unseen labels.
+    """
+    if not raw:
+        return None
+    t = re.sub(r"\s+", " ", raw.strip()).upper()
+    # try configured aliases (from ICD)
+    aliases = getattr(G1Config, "SSM_ALIASES", {}) or {}
+    for k, v in aliases.items():
+        if t == k or t.replace("_", " ") == k:
+            return v
+    # fallback: generic tokenization
+    token = re.sub(r"[^A-Z0-9]+", "_", t).strip("_")
+    return token or None
+
+def extract_ssm_states(text: str):
+    """
+    Returns {"eq": set(), "neq": set()} where sets contain normalized SSM tokens.
+    Empty sets if nothing found.
+    """
+    text = text or ""
+    out = {"eq": set(), "neq": set()}
+
+    for m in SSM_EQ_STATES_RE.finditer(text):
+        state = m.group("state_eq") or m.group("state_ind")
+        norm = _normalize_ssm_state(state)
+        if norm:
+            out["eq"].add(norm)
+
+    for m in SSM_NEQ_STATES_RE.finditer(text):
+        state = m.group("state_neq")
+        norm = _normalize_ssm_state(state)
+        if norm:
+            out["neq"].add(norm)
+
+    return out
+
+def extract_ssm_condition_bool_compat(text: str):
+    """
+    Backward-compatible boolean for 'Normal Operation':
+      True  -> explicitly equals NORMAL_OPERATION
+      False -> explicitly not equals NORMAL_OPERATION
+      None  -> not determinable from text
+    """
+    states = extract_ssm_states(text)
+    if "NORMAL_OPERATION" in states["eq"]:
+        return True
+    if "NORMAL_OPERATION" in states["neq"]:
+        return False
+    return None
+
+def _compare_ssm_states(sys_text: str, hlr_text: str, findings: list):
+    """
+    Multi-state comparison using eq/neq sets.
+    Flags:
+      - equality set mismatch
+      - contradictions (SYS eq vs HLR neq and vice versa)
+      - missing coverage (SYS eq state not covered at SW)
+      - extra eq constraints at SW not asked by SYS
+    """
+    sys_s = extract_ssm_states(sys_text)
+    hlr_s = extract_ssm_states(hlr_text)
+
+    # Exit if neither mentions SSM
+    if not (sys_s["eq"] or sys_s["neq"] or hlr_s["eq"] or hlr_s["neq"]):
+        return
+
+    # Equality sets differ (both sides claim explicit equals but not the same set)
+    if sys_s["eq"] and hlr_s["eq"] and sys_s["eq"] != hlr_s["eq"]:
+        findings.append((
+            "BOOLEAN_POLARITY_MISMATCH",
+            f"SSM equality constraints differ: SYS={sorted(sys_s['eq'])} vs SW={sorted(hlr_s['eq'])}"
+        ))
+
+    # Contradictions: one requires a state, the other forbids it
+    contradictions = (sys_s["eq"] & hlr_s["neq"]) | (hlr_s["eq"] & sys_s["neq"])
+    if contradictions:
+        findings.append((
+            "BOOLEAN_POLARITY_MISMATCH",
+            f"SSM contradictions on states: {sorted(contradictions)}"
+        ))
+
+    # SYS requires a state but SW is silent/doesn't cover it
+    missing_eq = sys_s["eq"] - hlr_s["eq"] - hlr_s["neq"]
+    if missing_eq:
+        findings.append((
+            "INCOMPLETE_SYSTEM_COVERAGE",
+            f"SSM states required by SYS but not covered in SW: {sorted(missing_eq)}"
+        ))
+
+    # Extra SW equality constraints not asked by SYS (unless SYS explicitly forbids them)
+    extra_eq = hlr_s["eq"] - sys_s["eq"] - sys_s["neq"]
+    if extra_eq:
+        findings.append((
+            "TRACEABILITY_EXTRA",
+            f"Extra SSM states constrained in SW: {sorted(extra_eq)}"
+        ))
+
+
+# ============================================================
+# ICD-AWARE ARINC COMPARISON (labels + polling rates)
+# ============================================================
+
+def _all_icd_intervals_for_label(label: str):
+    """
+    Return all periodic intervals (ms) for a given label across all receivers in ARINC_REF.
+    """
+    out = []
+    for rx, labmap in (getattr(G1Config, "ARINC_REF", {}) or {}).items():
+        for key, props in labmap.items():
+            # match plain label key (e.g., "206") or special entries like "206_L_ADC"
+            if key == label or key.startswith(f"{label}_"):
+                if props.get("periodic") and "interval_ms" in props:
+                    try:
+                        out.append(Decimal(str(props["interval_ms"])))
+                    except Exception:
+                        pass
+    return out
+
+def _icd_recommended_poll_for_label(label: str):
+    """
+    Return recommended 'polling_ms' hints for aperiodic label across receivers.
+    """
+    out = []
+    for rx, labmap in (getattr(G1Config, "ARINC_REF", {}) or {}).items():
+        for key, props in labmap.items():
+            if key == label or key.startswith(f"{label}_"):
+                if not props.get("periodic") and "polling_ms" in props:
+                    try:
+                        out.append(Decimal(str(props["polling_ms"])))
+                    except Exception:
+                        pass
+    return out
+
+_SENT_SPLIT = re.compile(r"(?<=[\.\?!])\s+|\n+")
+
+def _find_label_sentences(text: str, label: str):
+    """
+    Very simple heuristic: return sentences that contain the label token (octal, 3 digits).
+    """
+    out = []
+    if not (text and label):
+        return out
+    for sent in _SENT_SPLIT.split(text):
+        if re.search(rf"\b0?{label}\b", sent):
+            out.append(sent)
+    return out
+
+def _parse_times_from_sentences(sents: list[str]):
+    """
+    Use existing extract_time_values to pull candidate ms values from the sentences.
+    Returns decimals in ms.
+    """
+    vals = []
+    for s in sents:
+        for tok in extract_time_values(s):
+            # tokens look like "<= 500" or "200"; we want the trailing number (already in ms)
+            m = re.search(r"(-?\d+(?:\.\d+)?)$", tok)
+            if m:
+                try:
+                    vals.append(Decimal(m.group(1)))
+                except Exception:
+                    pass
+    return vals
+
+def _icd_compare_labels_and_rates(sys_text: str, hlr_text: str, findings: list):
+    """
+    1) Keep your existing label coverage checks (already in check_g1_1).
+    2) Additionally enforce ICD polling vs interval:
+         - If HLR (or SYS) states a poll period near a label, require:
+             period_ms <= min(ICD intervals for that label), when periodic
+             period_ms ≈ recommended polling_ms, when aperiodic (within tolerance)
+    """
+    if not getattr(G1Config, "ARINC_REF", None):
+        return  # nothing to do
+
+    # Candidate labels from both sides
+    labels = sorted(extract_arinc_labels_anywhere(sys_text, "") | extract_arinc_labels_anywhere(hlr_text, ""))
+
+    for lab in labels:
+        # Gather candidate poll periods (ms) from sentences that mention this label in SYS/HLR
+        sys_sents = _find_label_sentences(sys_text, lab)
+        hlr_sents = _find_label_sentences(hlr_text, lab)
+        cand_ms = _parse_times_from_sentences(sys_sents + hlr_sents)
+
+        if not cand_ms:
+            continue  # nothing to check for this label
+
+        # Periodic case: ensure period <= interval (use smallest ICD interval for strictest constraint)
+        icd_intervals = _all_icd_intervals_for_label(lab)
+        if icd_intervals:
+            icd_min = min(icd_intervals)
+            for p in cand_ms:
+                if p > icd_min:
+                    findings.append((
+                        "NUMERIC_MISMATCH",
+                        f"Polling for label {lab} is slower than ICD interval: period={_fmt_ms(p)} vs ICD_min={_fmt_ms(icd_min)}"
+                    ))
+
+        # Aperiodic case: if ICD provides a 'polling_ms' recommendation, check proximity (±10%)
+        icd_reco = _icd_recommended_poll_for_label(lab)
+        for r in icd_reco:
+            for p in cand_ms:
+                # accept ±10% tolerance by default
+                lo = r * Decimal("0.90")
+                hi = r * Decimal("1.10")
+                if not (lo <= p <= hi):
+                    findings.append((
+                        "NUMERIC_MISMATCH",
+                        f"Aperiodic polling for label {lab} deviates from ICD: period={_fmt_ms(p)} vs recommended≈{_fmt_ms(r)} (±10%)"
+                    ))
+
+
+# ============================================================
+# COMPARABILITY GATE (multi-state SSM aware)
+# ============================================================
+
+def has_any_signal(sys_text: str, hlr_text: str, sys_table: set, hlr_table: set) -> bool:
+    # Strong structured signals only
+    if extract_failsafe_states(sys_text) or extract_failsafe_states(hlr_text):
+        return True
+    if extract_monitor_set(sys_text) or extract_monitor_set(hlr_text):
+        return True
+    if extract_time_values(sys_text) or extract_time_values(hlr_text):
+        return True
+
+    # Legacy binary SSM for 'Normal Operation'
+    if extract_ssm_condition(sys_text) is not None or extract_ssm_condition(hlr_text) is not None:
+        return True
+
+    # NEW: multi-state SSM presence
+    ms_sys = extract_ssm_states(sys_text); ms_hlr = extract_ssm_states(hlr_text)
+    if ms_sys["eq"] or ms_sys["neq"] or ms_hlr["eq"] or ms_hlr["neq"]:
+        return True
+
+    if extract_boolean_polarity(sys_text) or extract_boolean_polarity(hlr_text):
+        return True
+    if sys_table or hlr_table:
+        return True
+    return False
+
+
+# ============================================================
+# BOOLEAN EXTRACTION (legacy helpers)
 # ============================================================
 
 SSM_PATTERN = re.compile(
@@ -447,7 +776,6 @@ def tokenize_terms(text: str) -> set:
 def detect_extra_features(sys_text: str, hlr_text: str) -> list:
     sys_terms = tokenize_terms(sys_text)
     extras = []
-    # Allow up to 3 in-between words after verb before object noun
     for v in G1Config.EXTRA_FEATURE_VERBS:
         pattern = re.compile(rf"\b{re.escape(v)}\b\s+(?:[a-z]+\s+){{0,3}}([a-zA-Z0-9_{{}}/\-]+)", re.IGNORECASE)
         for m in pattern.finditer(hlr_text or ""):
@@ -568,28 +896,9 @@ def render_grouped(findings: list) -> str:
     parts = []
     for title in sorted(buckets.keys()):
         parts.append(f"[{title}]\n" + "\n".join(buckets[title]))
-    return "\n\n".join(parts)
-
-
-# ============================================================
-# COMPARABILITY GATE
-# ============================================================
-
-def has_any_signal(sys_text: str, hlr_text: str, sys_table: set, hlr_table: set) -> bool:
-    # Strong structured signals only
-    if extract_failsafe_states(sys_text) or extract_failsafe_states(hlr_text):
-        return True
-    if extract_monitor_set(sys_text) or extract_monitor_set(hlr_text):
-        return True
-    if extract_time_values(sys_text) or extract_time_values(hlr_text):
-        return True
-    if extract_ssm_condition(sys_text) is not None or extract_ssm_condition(hlr_text) is not None:
-        return True
-    if extract_boolean_polarity(sys_text) or extract_boolean_polarity(hlr_text):
-        return True
-    if sys_table or hlr_table:
-        return True
-    return False
+    # LAST-MILE SANITIZER: remove any exponent number that might have slipped in
+    grouped = "\n\n".join(parts)
+    return _sanitize_exponents(grouped)
 
 
 # ============================================================
@@ -640,11 +949,17 @@ def check_g1_1(sys_req: dict, hlr_req: dict):
         # ARINC header hints
         arinc_header_compare(sys_table_text, hlr_table_text, findings)
 
-    # --- SSM polarity mismatch
-    sys_ssm = extract_ssm_condition(sys_text)
-    hlr_ssm = extract_ssm_condition(hlr_text)
+        # --- NEW: ICD-aware label polling checks ---
+        _icd_compare_labels_and_rates(sys_text, hlr_text, findings)  # uses G1Config.ARINC_REF
+
+    # --- NEW: Multi-state SSM comparison ---
+    _compare_ssm_states(sys_text, hlr_text, findings)
+
+    # --- OLD boolean fallback for Normal Operation only (kept for compatibility) ---
+    sys_ssm = extract_ssm_condition_bool_compat(sys_text)
+    hlr_ssm = extract_ssm_condition_bool_compat(hlr_text)
     if sys_ssm is not None and hlr_ssm is not None and sys_ssm != hlr_ssm:
-        findings.append(("BOOLEAN_POLARITY_MISMATCH", "SSM condition differs"))
+        findings.append(("BOOLEAN_POLARITY_MISMATCH", "SSM condition differs (Normal Operation)"))
 
     # --- ELSE default polarity mismatch (explicit, reviewer-friendly)
     sys_else_default = _extract_else_default(sys_text)
@@ -696,7 +1011,7 @@ def check_g1_1(sys_req: dict, hlr_req: dict):
     # --- Timing diffs (enhanced, pretty-format)
     compare_timing(sys_text, hlr_text, findings)
 
-    # --- Expression drift (noise-controlled)
+    # --- Expression drift (noise-controlled) -> plain numbers, no E+
     def _jaccard(a: set, b: set) -> float:
         if not a and not b:
             return 1.0
@@ -708,9 +1023,7 @@ def check_g1_1(sys_req: dict, hlr_req: dict):
     hlr_nums = extract_expression_numbers(hlr_text) - {"0", "1"}
 
     if sys_nums:
-        # 1) Skip drift if there are too many constants (likely algorithm body)
         if len(sys_nums) <= getattr(G1Config, "DRIFT_MAX_CONSTS", 25):
-            # 2) Only report drift if sets are materially different
             j = _jaccard(sys_nums, hlr_nums)
             if sys_nums != hlr_nums and j < getattr(G1Config, "DRIFT_MIN_JACCARD", 0.60):
                 findings.append(("POTENTIAL_LOGIC_DRIFT", format_numeric_drift(sys_nums, hlr_nums)))

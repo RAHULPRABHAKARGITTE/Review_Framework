@@ -131,16 +131,23 @@ def run_g1():
 
     with pd.ExcelWriter(OUTPUT_FILE, engine="openpyxl") as writer:
         df_sys.to_excel(writer, sheet_name="System_Requirements", index=False)
-        format_excel_sheet(writer, "System_Requirements")
+        format_excel_sheet(writer, "System_Requirements", zebra=True)
 
         df_hlr.to_excel(writer, sheet_name="Software_Requirements", index=False)
-        format_excel_sheet(writer, "Software_Requirements")
+        format_excel_sheet(writer, "Software_Requirements", zebra=True)
 
         df_trace.to_excel(writer, sheet_name="Traceability", index=False)
-        format_excel_sheet(writer, "Traceability")
+        format_excel_sheet(writer, "Traceability", zebra=True)
 
         df_g1.to_excel(writer, sheet_name="G1_Results", index=False)
-        format_excel_sheet(writer, "G1_Results")
+        # Colorize by result/refinement for this sheet
+        format_excel_sheet(
+            writer,
+            "G1_Results",
+            result_col_candidates=("G1_RESULT", "G1_1_RESULT", "OVERALL", "RESULT"),
+            refinement_col_candidates=("REFINEMENT", "REFINEMENT_FLAG"),
+            zebra=True,
+        )
 
     print(f"✅ G1.1/G1.2 output generated: {OUTPUT_FILE}")
 

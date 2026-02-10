@@ -1,22 +1,23 @@
-import subprocess
+import subprocess                                   #Uses Python’s subprocess module to run an external command (here, invoking ollama on your machine)
 
-_llm_cache = {}
+_llm_cache = {}                                     #A simple in-memory cache. Keys are derived from the inputs; values are the generated explanations. This avoids repeated LLM calls for identical requests.
 
 MODEL_NAME = "mistral"  # change if needed
 
 #def explain_mismatch(sys_text: str, hlr_text: str, issues: str) -> str:
-def explain_mismatch(sys_text, hlr_text, issues, evidence):
+def explain_mismatch(sys_text, hlr_text, issues, debug, evidence):
     cache_key = (
         sys_text[:300],
         hlr_text[:300],
         issues,
-        str(evidence)
+        str(evidence),
+        debug
     )
 
     if cache_key in _llm_cache:
-        return _llm_cache[cache_key]
+        return _llm_cache[cache_key]                    #return the same cached result(two calls differ only after the 300th character)
 
-    def _shorten(text, limit=1200):
+    def _shorten(text, limit=1200):             #trims long texts to 1200 chars
         text = text.strip()
         return text[:limit] + ("..." if len(text) > limit else "")
 
@@ -35,6 +36,12 @@ def explain_mismatch(sys_text, hlr_text, issues, evidence):
     DETECTED ISSUES:
     {issues}
 
+    DEBUG INFO:
+    {debug}
+
+    EVIDENCE:
+    {evidence}
+
     Explain:
     1. What exactly differs
     2. Where it differs (conditions, branches, clauses)
@@ -47,17 +54,16 @@ def explain_mismatch(sys_text, hlr_text, issues, evidence):
     - No speculation
     - Be precise
     """
-
-
+    
     try:
         result = subprocess.run(
             ["ollama", "run", MODEL_NAME],
             input=prompt,
-            capture_output=True,
+            capture_output=True,                                 #Sends the prompt to stdin, captures stdout/stderr, sets UTF-8 encoding, and a timeout of 300 seconds.
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=300
+            timeout=400
         )
     except Exception as e:
         return f"LLM explanation failed: {e}"
