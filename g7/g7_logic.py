@@ -793,10 +793,6 @@ def if_else_syntax_check(algo_df):
                 f"Notice: Requirement may be compound/run-on (excess punctuation) at ID [{req_id}]."
             )
 
-    if not results["details"]:
-        results["details"].append(
-            f"Scanned {total} requirements; written statements appear understandable."
-        )
 
     append_result(results)
 
