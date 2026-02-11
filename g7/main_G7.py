@@ -5,7 +5,6 @@ from g7.config.config_g7 import DEFAULT_SRS_PATH, RESULTS_XLSX
 from g7.g7_logic import (
     parse_requirements,
     if_else_syntax_check,
-    written_requirement_understandable_check,
     for_condition_syntax_check,
     while_syntax_check,
     switch_syntax_check,
@@ -30,7 +29,6 @@ def main():
     for_condition_syntax_check(algo_req)
     while_syntax_check(algo_req)
     switch_syntax_check(algo_req)
-    written_requirement_understandable_check(algo_req)
 
     # -------------------------
     # Objective G 7.2

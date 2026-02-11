@@ -20,7 +20,7 @@ BASE_DIR = Path(__file__).resolve().parents[2]  # Review_Framework
 INPUT_DIR = BASE_DIR / "inputs"
 OUTPUT_DIR = BASE_DIR / "outputs"
 
-DEFAULT_SRS_PATH = str(INPUT_DIR / "SCU_SRS_g7.docx")
+DEFAULT_SRS_PATH = str(INPUT_DIR / "SCU_SRS_G7.docx")
 RESULTS_XLSX = str(OUTPUT_DIR / "G7_Algorithm_Analysis.xlsx")
 
 
@@ -30,7 +30,7 @@ BASE_DIR = Path(__file__).resolve().parents[2]   # Review_Framework/
 INPUT_DIR = BASE_DIR / "inputs"
 OUTPUT_DIR = BASE_DIR / "outputs"
 
-DEFAULT_SRS_PATH = str(INPUT_DIR / "SCU_SRS_if.docx")
+DEFAULT_SRS_PATH = str(INPUT_DIR / "SCU_SRS_G7.docx")
 RESULTS_XLSX = str(OUTPUT_DIR / "G7_Algorithm_Analysis.xlsx")
 
 
