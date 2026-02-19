@@ -32,7 +32,6 @@ __all__ = [
     "null_pointer_check",
     "out_of_range_check",
     "var_input_analysis",
-    "get_objective_for_check",
     "print_objective",
 ]
 
@@ -44,7 +43,6 @@ __all__ = [
 OBJECTIVE_MAP = {
     # Objective G 7.1
     "if_else_syntax_check": "Objective G 7.1",
-    "written_requirement_understandable_check": "Objective G 7.1",
     "for_condition_syntax_check": "Objective G 7.1",
     "while_syntax_check": "Objective G 7.1",
     "switch_syntax_check": "Objective G 7.1",
@@ -94,7 +92,6 @@ def print_objective(check: str) -> None:
       "for_condition_syntax_check",
       "while_syntax_check",
       "switch_syntax_check",
-      "written_requirement_understandable_check",
     }
     if check in g71_checks:
         print("Objective G 7.1")
@@ -685,40 +682,6 @@ def if_else_syntax_check(algo_df):
     append_result(results)
     ##return results
 
-def written_requirement_understandable_check(algo_df):
-    """
-    Objective G 7.1 — Written requirement statement understandability checker.
-
-    This check verifies that requirement statement text is understandable by detecting:
-      - Empty / too short statements
-      - Placeholder tokens (TBD/TBR/XXX/???)
-      - Ambiguous / vague language (Notice only)
-      - Missing prescriptive modal ('shall' or 'must') (Notice only)
-      - Unbalanced parentheses/brackets
-      - Code-like fragments (Notice only)
-
-    NOTE:
-      Length-based warnings are intentionally NOT generated
-      (your project explicitly does not want 'Very long requirement...' messages).
-
-    Output:
-      Uses append_result() to write into Algorithm_analysis_result.xlsx
-      -> Results + Results_Details (same style as if_else_syntax_check).
-    """
-    results = {
-        "check": "written_requirement_understandable_check",
-        "status": "Passed",
-        "details": [],
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "ids": list(pd.unique(algo_df["ID"]))
-    }
-
-    total = len(algo_df)
-    if total == 0:
-        results["status"] = "Failed: algo_df is empty"
-        append_result(results)
-        return
-
     # -------------------------
     # Patterns
     # -------------------------
@@ -830,10 +793,6 @@ def written_requirement_understandable_check(algo_df):
                 f"Notice: Requirement may be compound/run-on (excess punctuation) at ID [{req_id}]."
             )
 
-    if not results["details"]:
-        results["details"].append(
-            f"Scanned {total} requirements; written statements appear understandable."
-        )
 
     append_result(results)
 
