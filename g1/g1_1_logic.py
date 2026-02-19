@@ -136,6 +136,46 @@ def normalize_table(table_text: str) -> set:
 # ARINC LABEL HANDLING
 # ============================================================
 
+# Matches:
+#  - Octal ARINC labels (022, 226, 174)
+#  - Decimal IDs
+#  - Hex CAN IDs (0x18FF50E5)
+#  - Words like LABEL 200, ID 123
+GENERIC_ID_RE = re.compile(
+    r"\b0x[0-9A-Fa-f]+\b|\b[0-9]{2,4}\b",
+    re.IGNORECASE
+)
+
+def extract_identifiers(text: str) -> set:
+    if not text:
+        return set()
+
+    matches = GENERIC_ID_RE.findall(text)
+    return set(matches)
+
+# -------------------------------------------------------
+# Detect if SYS list is exhaustive
+# -------------------------------------------------------
+
+def is_exhaustive_list(sys_text: str) -> bool:
+    """
+    Detect if SYS explicitly says 'below labels', 'following labels',
+    meaning list is exhaustive.
+    """
+    if not sys_text:
+        return False
+
+    keywords = [
+        "below arinc labels",
+        "following arinc labels",
+        "shall receive the below",
+        "shall transmit the below",
+        "only the following"
+    ]
+
+    text = sys_text.lower()
+    return any(k in text for k in keywords)
+
 ARINC_LABEL_PATTERN = re.compile(r"\b0?[0-7]{3}\b")         # Finds all octal label tokens of 3 digits
 ARINC_TABLE_HINT = re.compile(r"\blabel\b", re.IGNORECASE)  # If a table contains the word “label”.
 
@@ -538,36 +578,8 @@ def _compare_ssm_states(sys_text: str, hlr_text: str, findings: list):
 # ICD-AWARE ARINC COMPARISON (labels + polling rates)
 # ============================================================
 
-def _all_icd_intervals_for_label(label: str):
-    """
-    Return all periodic intervals (ms) for a given label across all receivers in ARINC_REF.
-    """
-    out = []
-    for rx, labmap in (getattr(G1Config, "ARINC_REF", {}) or {}).items():
-        for key, props in labmap.items():
-            # match plain label key (e.g., "206") or special entries like "206_L_ADC"
-            if key == label or key.startswith(f"{label}_"):
-                if props.get("periodic") and "interval_ms" in props:
-                    try:
-                        out.append(Decimal(str(props["interval_ms"])))
-                    except Exception:
-                        pass
-    return out
 
-def _icd_recommended_poll_for_label(label: str):
-    """
-    Return recommended 'polling_ms' hints for aperiodic label across receivers.
-    """
-    out = []
-    for rx, labmap in (getattr(G1Config, "ARINC_REF", {}) or {}).items():
-        for key, props in labmap.items():
-            if key == label or key.startswith(f"{label}_"):
-                if not props.get("periodic") and "polling_ms" in props:
-                    try:
-                        out.append(Decimal(str(props["polling_ms"])))
-                    except Exception:
-                        pass
-    return out
+
 
 _SENT_SPLIT = re.compile(r"(?<=[\.\?!])\s+|\n+")
 
@@ -599,53 +611,6 @@ def _parse_times_from_sentences(sents: list[str]):
                 except Exception:
                     pass
     return vals
-
-def _icd_compare_labels_and_rates(sys_text: str, hlr_text: str, findings: list):
-    """
-    1) Keep your existing label coverage checks (already in check_g1_1).
-    2) Additionally enforce ICD polling vs interval:
-         - If HLR (or SYS) states a poll period near a label, require:
-             period_ms <= min(ICD intervals for that label), when periodic
-             period_ms ≈ recommended polling_ms, when aperiodic (within tolerance)
-    """
-    if not getattr(G1Config, "ARINC_REF", None):
-        return  # nothing to do
-
-    # Candidate labels from both sides
-    labels = sorted(extract_arinc_labels_anywhere(sys_text, "") | extract_arinc_labels_anywhere(hlr_text, ""))
-
-    for lab in labels:
-        # Gather candidate poll periods (ms) from sentences that mention this label in SYS/HLR
-        sys_sents = _find_label_sentences(sys_text, lab)
-        hlr_sents = _find_label_sentences(hlr_text, lab)
-        cand_ms = _parse_times_from_sentences(sys_sents + hlr_sents)
-
-        if not cand_ms:
-            continue  # nothing to check for this label
-
-        # Periodic case: ensure period <= interval (use smallest ICD interval for strictest constraint)
-        icd_intervals = _all_icd_intervals_for_label(lab)
-        if icd_intervals:
-            icd_min = min(icd_intervals)
-            for p in cand_ms:
-                if p > icd_min:
-                    findings.append((
-                        "NUMERIC_MISMATCH",
-                        f"Polling for label {lab} is slower than ICD interval: period={_fmt_ms(p)} vs ICD_min={_fmt_ms(icd_min)}"
-                    ))
-
-        # Aperiodic case: if ICD provides a 'polling_ms' recommendation, check proximity (±10%)
-        icd_reco = _icd_recommended_poll_for_label(lab)
-        for r in icd_reco:
-            for p in cand_ms:
-                # accept ±10% tolerance by default
-                lo = r * Decimal("0.90")
-                hi = r * Decimal("1.10")
-                if not (lo <= p <= hi):
-                    findings.append((
-                        "NUMERIC_MISMATCH",
-                        f"Aperiodic polling for label {lab} deviates from ICD: period={_fmt_ms(p)} vs recommended≈{_fmt_ms(r)} (±10%)"
-                    ))
 
 
 # ============================================================
@@ -913,11 +878,58 @@ def check_g1_1(sys_req: dict, hlr_req: dict):
     sys_table_text = sys_req.get("TABLE_TEXT", "") or ""
     hlr_table_text = hlr_req.get("TABLE_TEXT", "") or ""
 
+    sys_label_text = (sys_req.get("TEXT") or "") + "\n" + (sys_req.get("TABLE_TEXT") or "")
+    sw_text = hlr_text or ""
+
+
+    sys_ids = extract_identifiers(sys_label_text)
+    sw_ids  = extract_identifiers(sw_text)
+
     # For comparability gate we keep normalized presence checks
     sys_table = normalize_table(sys_table_text)
     hlr_table = normalize_table(hlr_table_text)
 
     findings = []
+
+    # ---------------------------------------------------
+    # 1. Missing Required Identifiers → FAIL
+    # ---------------------------------------------------
+    missing = sys_ids - sw_ids
+    if missing:
+        findings.append((
+            "TRACEABILITY_MISSING",
+            f"Missing required identifier(s): {', '.join(sorted(missing))}"
+        ))
+
+
+    # ---------------------------------------------------
+    # 2. Extra Identifiers → Only FAIL if SYS is exhaustive
+    # ---------------------------------------------------
+    extra = sw_ids - sys_ids
+    if extra and is_exhaustive_list(sys_label_text):
+        findings.append((
+            "TRACEABILITY_EXTRA",
+            f"Extra identifier(s) not defined in SYSTEM requirement: {', '.join(sorted(extra))}"
+        ))
+
+
+     # ---------------------------------------------------
+    # 3. Numeric constraint enforcement (ONLY if SYS defines timing)
+    # ----------------------------------------------------
+    # Detect interval requirement explicitly in SYS
+    interval_pattern = re.compile(r"\b(\d+(?:\.\d+)?)\s*ms\b", re.IGNORECASE)
+
+    sys_intervals = set(interval_pattern.findall(sys_label_text))
+    sw_intervals  = set(interval_pattern.findall(sw_text))
+
+    if sys_intervals:
+        if sys_intervals != sw_intervals:
+            findings.append((
+                "NUMERIC_MISMATCH",
+                f"Timing mismatch. SYS={sys_intervals}, SW={sw_intervals}"
+            ))
+
+
 
     # Applicability gate => REVIEW (manual review), not FAIL
     if not has_any_signal(sys_text, hlr_text, sys_table, hlr_table):
@@ -929,10 +941,8 @@ def check_g1_1(sys_req: dict, hlr_req: dict):
 
     # --- ARINC label logic
     if (
-        looks_like_arinc(sys_table_text) or
-        looks_like_arinc(hlr_table_text) or
-        ("arinc" in sys_text.lower()) or
-        ("arinc" in hlr_text.lower())
+    looks_like_arinc(sys_table_text) or
+    "shall receive" in sys_text.lower() and "label" in sys_text.lower()
     ):
         sys_labels = extract_arinc_labels_anywhere(sys_text, sys_table_text)
         hlr_labels = extract_arinc_labels_anywhere(hlr_text, hlr_table_text)
@@ -949,9 +959,7 @@ def check_g1_1(sys_req: dict, hlr_req: dict):
         # ARINC header hints
         arinc_header_compare(sys_table_text, hlr_table_text, findings)
 
-        # --- NEW: ICD-aware label polling checks ---
-        _icd_compare_labels_and_rates(sys_text, hlr_text, findings)  # uses G1Config.ARINC_REF
-
+       
     # --- NEW: Multi-state SSM comparison ---
     _compare_ssm_states(sys_text, hlr_text, findings)
 
@@ -1009,7 +1017,9 @@ def check_g1_1(sys_req: dict, hlr_req: dict):
     check_extra_features(sys_text, hlr_text, findings)
 
     # --- Timing diffs (enhanced, pretty-format)
-    compare_timing(sys_text, hlr_text, findings)
+    if extract_time_values(sys_text):
+        compare_timing(sys_text, hlr_text, findings)
+
 
     # --- Expression drift (noise-controlled) -> plain numbers, no E+
     def _jaccard(a: set, b: set) -> float:
@@ -1022,7 +1032,7 @@ def check_g1_1(sys_req: dict, hlr_req: dict):
     sys_nums = extract_expression_numbers(sys_text) - {"0", "1"}
     hlr_nums = extract_expression_numbers(hlr_text) - {"0", "1"}
 
-    if sys_nums:
+    if sys_nums and len(sys_nums) > 3:
         if len(sys_nums) <= getattr(G1Config, "DRIFT_MAX_CONSTS", 25):
             j = _jaccard(sys_nums, hlr_nums)
             if sys_nums != hlr_nums and j < getattr(G1Config, "DRIFT_MIN_JACCARD", 0.60):
@@ -1030,7 +1040,9 @@ def check_g1_1(sys_req: dict, hlr_req: dict):
         # else: skip to reduce noise
 
     # --- Table comparison (enhanced)
-    compare_tables(sys_table_text, hlr_table_text, findings)
+    if sys_table_text.strip():
+        compare_tables(sys_table_text, hlr_table_text, findings)
+
 
     # --- Refinement classification (predictable)
     refinement_flag = G1Config.REFINEMENT_NONE

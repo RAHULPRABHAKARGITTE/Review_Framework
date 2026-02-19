@@ -124,7 +124,41 @@ def run_g1():
 
     df_sys = pd.DataFrame(system_reqs, columns=["SYS_ID", "TEXT", "TABLE_TEXT"])
     df_hlr = pd.DataFrame(hlr_reqs, columns=["HLR_ID", "TEXT", "TABLE_TEXT"])
-    df_trace = pd.DataFrame(trace_links)
+    
+    # -----------------------------
+    # Build complete trace table
+    # -----------------------------
+
+    # Existing traced pairs
+    trace_rows = list(trace_links)
+
+    # Extract ID sets
+    all_sys_ids = {r["SYS_ID"] for r in system_reqs}
+    all_hlr_ids = {r["HLR_ID"] for r in hlr_reqs}
+
+    traced_sys_ids = {t["SYS_ID"] for t in trace_links}
+    traced_hlr_ids = {t["HLR_ID"] for t in trace_links}
+
+    # ---- Untraced HLRs ----
+    for hlr_id in sorted(all_hlr_ids - traced_hlr_ids):
+        trace_rows.append({
+            "HLR_ID": hlr_id,
+            "SYS_ID": "NOT TRACED TO SYS ID"
+        })
+
+    # ---- Untraced SYS ----
+    for sys_id in sorted(all_sys_ids - traced_sys_ids):
+        trace_rows.append({
+            "HLR_ID": "NOT TRACED TO HLR ID",
+            "SYS_ID": sys_id
+        })
+
+    df_trace = pd.DataFrame(trace_rows)
+
+    df_trace = df_trace.sort_values(
+        by=["SYS_ID", "HLR_ID"],
+        na_position="last"
+    ).reset_index(drop=True)
 
     g1_results = check_g1(system_reqs, hlr_reqs, trace_links)
     df_g1 = pd.DataFrame(g1_results)

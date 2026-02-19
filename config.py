@@ -149,50 +149,6 @@ class G1Config:
         "NO_DATA": "NO_DATA",
     }
 
-    # --- NEW: ICD-derived ARINC reference from SCU_ICD.docx
-    # We encode: receiver -> label(octal string) -> properties
-    # where properties include periodic? interval_ms? qualifier? or aperiodic polling_ms?
-    # These values are copied from your ICD tables/text.
-    ARINC_REF = {
-        "DMCA1": {
-            "022": {"periodic": True,  "interval_ms": "40.96"},
-            "226": {"periodic": True,  "interval_ms": "1400"},
-            "174": {"periodic": True,  "interval_ms": "100",  "qualifier": "Right"},
-            "206": {"periodic": True,  "interval_ms": "67",   "qualifier": "ISI"},
-            # Same label with different qualifier/intervals also present in ICD:
-            "260": {"periodic": True,  "interval_ms": "1000"},
-            "107": {"periodic": False, "polling_ms": "1000"},  # Aperiodic (polling rate 1000)
-            # Additional 206 L/R ADC from table:
-            # We keep these as separate entries keyed by same label; qualifiers help disambiguate.
-            "206_L_ADC": {"periodic": True, "interval_ms": "100", "qualifier": "L ADC"},
-            "206_R_ADC": {"periodic": True, "interval_ms": "100", "qualifier": "R ADC"},
-        },
-        "DMCB1": {
-            "022": {"periodic": True,  "interval_ms": "40.96"},
-            "226": {"periodic": True,  "interval_ms": "1400"},
-            "174": {"periodic": True,  "interval_ms": "100",  "qualifier": "Right"},
-            "206": {"periodic": True,  "interval_ms": "67",   "qualifier": "ISI"},
-            "260": {"periodic": True,  "interval_ms": "1000"},
-            "107": {"periodic": False, "polling_ms": "1000"},
-            "206_L_ADC": {"periodic": True, "interval_ms": "100", "qualifier": "L ADC"},
-            "206_R_ADC": {"periodic": True, "interval_ms": "100", "qualifier": "R ADC"},
-        },
-        "ACE1B1": {
-            "136": {"periodic": True, "interval_ms": "10"},
-        },
-        "ACE1B2": {
-            "136": {"periodic": True, "interval_ms": "10"},
-        },
-    }
-    # Rule from ICD prose:
-    #   “Poll the ARINC receivers for the labels listed … more frequently than the transmission frequency”
-    # Interpreted as: poll_period_ms <= interval_ms (or match the recommended 'polling_ms' for aperiodic).
-    ARINC_POLLING_RULE = "POLL_PERIOD_LEQ_INTERVAL"
-
-    # Optional: keywords to identify polling phrases near labels (heuristics)
-    POLL_KEYWORDS = ("poll", "polled", "polling", "monitor", "monitored", "read", "sample", "sampling")
-
-
     # ============================================================
     # DOMAIN-SPECIFIC FUNCTIONAL ELEMENT KEYWORDS
     # (Used for G1.1 functional alignment checks)

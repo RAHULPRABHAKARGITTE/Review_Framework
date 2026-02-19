@@ -13,7 +13,8 @@ from g1.intent_consistency_logic import (
     get_intent_debug
 )
 
-from g1.llm_explainer import explain_mismatch
+#from g1.llm_explainer import explain_mismatch
+from g1.llm_explainer import RequirementReviewerAgent, extract_llm_reviewer_verdict
 
 from g1.state_diagram_logic import (
     is_state_diagram_requirement,
@@ -495,12 +496,6 @@ def check_g1(system_reqs, hlr_reqs, trace_links):
             extra_note = "Algorithm threshold mismatch/missing detected; see DEBUG."
             final_comment = (final_comment + " | " + extra_note) if final_comment else extra_note
 
-
-        # --------------------------------------------------------
-        # EXTRA: Algorithm branch + threshold mismatch + formula mismatch
-        # Move these details to DEBUG (not COMMENT)
-        # --------------------------------------------------------
-
         # --------------------------------------------------------
         # EXTRA: Algorithm branch + threshold mismatch + formula mismatch
         # Move these details to DEBUG (not COMMENT)
@@ -514,6 +509,7 @@ def check_g1(system_reqs, hlr_reqs, trace_links):
         b_sw  = count_branches(sw_text_for_branch)
 
         algo_debug = []
+
         algo_debug.append(f"BRANCH_COUNTS SYS={b_sys} SW={b_sw}")
 
         # ELSE/ELSEIF deltas
@@ -581,15 +577,26 @@ def check_g1(system_reqs, hlr_reqs, trace_links):
         # --------------------------------------------------------
         # LLM EXPLANATION (ALWAYS FOR FAIL)
         # --------------------------------------------------------
-        llm_explanation = ""
-        if G1Config.LLM_ENABLED and final_result == G1Config.FAIL:
-            llm_explanation = explain_mismatch(
-                sys_text=sys_text,
-                hlr_text=sw_text,
-                issues=final_comment or "FAIL_WITHOUT_EXPLICIT_REASON",
-                evidence=evidence,
-                debug=debug_str,     # <-- include debug so your template can show it
-            )
+        # llm_explanation = ""
+        # if G1Config.LLM_ENABLED and final_result == G1Config.FAIL:
+        #     llm_explanation = explain_mismatch(
+        #         sys_text=sys_text,
+        #         hlr_text=sw_text,
+        #         issues=final_comment or "FAIL_WITHOUT_EXPLICIT_REASON",
+        #         evidence=evidence,
+        #         debug=debug_str,     # <-- include debug so your template can show it
+        #     )
+
+        llm_reviewer = RequirementReviewerAgent()
+
+
+        llm_review = ""
+
+        llm_review = llm_reviewer.review(
+            sys_text=sys_text,
+            sw_text=sw_text
+        )
+
 
         results.append({
             "SYS_ID": sys_id,
@@ -604,7 +611,8 @@ def check_g1(system_reqs, hlr_reqs, trace_links):
             "REFINEMENT": g1_1_refinement,
             "COMMENT": final_comment,
             "DEBUG": debug_str,
-            "LLM_EXPLANATION": llm_explanation
+            "LLM_EXPLANATION": llm_review,
+            "LLM_REVIEW_RESULT": extract_llm_reviewer_verdict(llm_review)
         })
 
     return results
