@@ -314,7 +314,7 @@ class RequirementReviewerAgent:
 
         output = result.stdout.strip()
         self._cache[key] = output
-        print("LLM CALLED")
+        print("LLM WAS CALLED")
         return output
 
 
