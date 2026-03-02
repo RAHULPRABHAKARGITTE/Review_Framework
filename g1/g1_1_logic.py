@@ -142,16 +142,30 @@ def normalize_table(table_text: str) -> set:
 #  - Hex CAN IDs (0x18FF50E5)
 #  - Words like LABEL 200, ID 123
 GENERIC_ID_RE = re.compile(
-    r"\b0x[0-9A-Fa-f]+\b|\b[0-9]{2,4}\b",
-    re.IGNORECASE
+    r"""
+    \b0x[0-9A-Fa-f]+\b              # Hex CAN IDs
+    |
+    \b(?:ID|Label|LABEL|ARINC)\s*[:=]?\s*([0-9]{2,4})\b   # Explicit ID/Label references
+    """,
+    re.IGNORECASE | re.VERBOSE
 )
 
 def extract_identifiers(text: str) -> set:
     if not text:
         return set()
 
-    matches = GENERIC_ID_RE.findall(text)
-    return set(matches)
+    ids = set()
+
+    for m in GENERIC_ID_RE.finditer(text):
+        token = m.group(1) if m.group(1) else m.group(0)
+
+        # Skip pure octal 3-digit tokens (handled by ARINC logic)
+        if re.fullmatch(r"0?[0-7]{3}", token):
+            continue
+
+        ids.add(token)
+
+    return ids
 
 # -------------------------------------------------------
 # Detect if SYS list is exhaustive
@@ -575,49 +589,10 @@ def _compare_ssm_states(sys_text: str, hlr_text: str, findings: list):
 
 
 # ============================================================
-# ICD-AWARE ARINC COMPARISON (labels + polling rates)
-# ============================================================
-
-
-
-
-_SENT_SPLIT = re.compile(r"(?<=[\.\?!])\s+|\n+")
-
-def _find_label_sentences(text: str, label: str):
-    """
-    Very simple heuristic: return sentences that contain the label token (octal, 3 digits).
-    """
-    out = []
-    if not (text and label):
-        return out
-    for sent in _SENT_SPLIT.split(text):
-        if re.search(rf"\b0?{label}\b", sent):
-            out.append(sent)
-    return out
-
-def _parse_times_from_sentences(sents: list[str]):
-    """
-    Use existing extract_time_values to pull candidate ms values from the sentences.
-    Returns decimals in ms.
-    """
-    vals = []
-    for s in sents:
-        for tok in extract_time_values(s):
-            # tokens look like "<= 500" or "200"; we want the trailing number (already in ms)
-            m = re.search(r"(-?\d+(?:\.\d+)?)$", tok)
-            if m:
-                try:
-                    vals.append(Decimal(m.group(1)))
-                except Exception:
-                    pass
-    return vals
-
-
-# ============================================================
 # COMPARABILITY GATE (multi-state SSM aware)
 # ============================================================
 
-def has_any_signal(sys_text: str, hlr_text: str, sys_table: set, hlr_table: set) -> bool:
+def has_any_signal(sys_label_text: str, sys_text: str, hlr_text: str, sys_table: set, hlr_table: set) -> bool:
     # Strong structured signals only
     if extract_failsafe_states(sys_text) or extract_failsafe_states(hlr_text):
         return True
@@ -625,19 +600,19 @@ def has_any_signal(sys_text: str, hlr_text: str, sys_table: set, hlr_table: set)
         return True
     if extract_time_values(sys_text) or extract_time_values(hlr_text):
         return True
+    
+    if extract_identifiers(sys_label_text) or extract_identifiers(hlr_text):
+        return True
 
-    # Legacy binary SSM for 'Normal Operation'
-    if extract_ssm_condition(sys_text) is not None or extract_ssm_condition(hlr_text) is not None:
+    if extract_arinc_labels_anywhere(sys_text, ""):
+        return True
+
+    if sys_table or hlr_table:
         return True
 
     # NEW: multi-state SSM presence
     ms_sys = extract_ssm_states(sys_text); ms_hlr = extract_ssm_states(hlr_text)
     if ms_sys["eq"] or ms_sys["neq"] or ms_hlr["eq"] or ms_hlr["neq"]:
-        return True
-
-    if extract_boolean_polarity(sys_text) or extract_boolean_polarity(hlr_text):
-        return True
-    if sys_table or hlr_table:
         return True
     return False
 
@@ -645,30 +620,6 @@ def has_any_signal(sys_text: str, hlr_text: str, sys_table: set, hlr_table: set)
 # ============================================================
 # BOOLEAN EXTRACTION (legacy helpers)
 # ============================================================
-
-SSM_PATTERN = re.compile(
-    r"SSM\s+data\s+(?:is\s+)?(?:(not)\s+)?set\s+to\s+\"?Normal\s+Operation\"?",
-    re.IGNORECASE
-)
-SSM_NEQ_PATTERN = re.compile(
-    r"SSM\s+data\s+(?:!=|not\s+equal\s+to|not\s+set\s+to)\s+\"?Normal\s+Operation\"?",
-    re.IGNORECASE
-)
-
-def extract_ssm_condition(text: str):
-    """
-    True  = set to Normal Operation
-    False = NOT set to Normal Operation
-    None  = not found
-    """
-    text = text or ""
-    if SSM_NEQ_PATTERN.search(text):
-        return False
-    m = SSM_PATTERN.search(text)
-    if not m:
-        return None
-    return False if m.group(1) else True
-
 
 INITIAL_BOOL_PATTERN = re.compile(
     r"(initial value of|initially|initial value)\s+(TRUE|FALSE)",
@@ -889,6 +840,15 @@ def check_g1_1(sys_req: dict, hlr_req: dict):
     sys_table = normalize_table(sys_table_text)
     hlr_table = normalize_table(hlr_table_text)
 
+    
+    # Applicability gate => REVIEW (manual review), not FAIL
+    if not has_any_signal(sys_label_text, sys_text, hlr_text, sys_table, hlr_table):
+        return (
+            G1Config.REVIEW,
+            G1Config.REFINEMENT_NONE,
+            "No comparable structured signals detected; automated comparison not applicable. Manual review required."
+        )
+
     findings = []
 
     # ---------------------------------------------------
@@ -916,49 +876,26 @@ def check_g1_1(sys_req: dict, hlr_req: dict):
      # ---------------------------------------------------
     # 3. Numeric constraint enforcement (ONLY if SYS defines timing)
     # ----------------------------------------------------
-    # Detect interval requirement explicitly in SYS
-    interval_pattern = re.compile(r"\b(\d+(?:\.\d+)?)\s*ms\b", re.IGNORECASE)
-
-    sys_intervals = set(interval_pattern.findall(sys_label_text))
-    sw_intervals  = set(interval_pattern.findall(sw_text))
-
-    if sys_intervals:
-        if sys_intervals != sw_intervals:
-            findings.append((
-                "NUMERIC_MISMATCH",
-                f"Timing mismatch. SYS={sys_intervals}, SW={sw_intervals}"
-            ))
-
-
-
-    # Applicability gate => REVIEW (manual review), not FAIL
-    if not has_any_signal(sys_text, hlr_text, sys_table, hlr_table):
-        return (
-            G1Config.REVIEW,
-            G1Config.REFINEMENT_NONE,
-            "No comparable structured signals detected; automated comparison not applicable. Manual review required."
-        )
 
     # --- ARINC label logic
-    if (
-    looks_like_arinc(sys_table_text) or
-    "shall receive" in sys_text.lower() and "label" in sys_text.lower()
-    ):
-        sys_labels = extract_arinc_labels_anywhere(sys_text, sys_table_text)
-        hlr_labels = extract_arinc_labels_anywhere(hlr_text, hlr_table_text)
+    sys_labels = extract_arinc_labels_anywhere(sys_text, sys_table_text)
+    hlr_labels = extract_arinc_labels_anywhere(hlr_text, hlr_table_text)
 
-        if sys_labels and not sys_labels.issubset(hlr_labels):
+    if sys_labels:
+        if not sys_labels.issubset(hlr_labels):
             findings.append((
                 "INCOMPLETE_SYSTEM_COVERAGE",
                 f"Missing ARINC labels in software: {sorted(sys_labels - hlr_labels)}"
             ))
 
-        if hlr_labels - sys_labels:
-            findings.append(("TRACEABILITY_EXTRA", f"Extra ARINC labels in software: {sorted(hlr_labels - sys_labels)}"))
+        extra_labels = hlr_labels - sys_labels
+        if extra_labels:
+            findings.append((
+                "TRACEABILITY_EXTRA",
+                f"Extra ARINC labels in software: {sorted(extra_labels)}"
+            ))
 
-        # ARINC header hints
         arinc_header_compare(sys_table_text, hlr_table_text, findings)
-
        
     # --- NEW: Multi-state SSM comparison ---
     _compare_ssm_states(sys_text, hlr_text, findings)

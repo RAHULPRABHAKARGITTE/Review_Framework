@@ -14,7 +14,7 @@ from g1.intent_consistency_logic import (
 )
 
 #from g1.llm_explainer import explain_mismatch
-from g1.llm_explainer import RequirementReviewerAgent, extract_llm_reviewer_verdict
+#from g1.llm_explainer import RequirementReviewerAgent, extract_llm_reviewer_verdict
 
 from g1.state_diagram_logic import (
     is_state_diagram_requirement,
@@ -587,15 +587,15 @@ def check_g1(system_reqs, hlr_reqs, trace_links):
         #         debug=debug_str,     # <-- include debug so your template can show it
         #     )
 
-        llm_reviewer = RequirementReviewerAgent()
+        # llm_reviewer = RequirementReviewerAgent()
 
 
-        llm_review = ""
+        # llm_review = ""
 
-        llm_review = llm_reviewer.review(
-            sys_text=sys_text,
-            sw_text=sw_text
-        )
+        # llm_review = llm_reviewer.review(
+        #     sys_text=sys_text,
+        #     sw_text=sw_text
+        # )
 
 
         results.append({
@@ -611,8 +611,8 @@ def check_g1(system_reqs, hlr_reqs, trace_links):
             "REFINEMENT": g1_1_refinement,
             "COMMENT": final_comment,
             "DEBUG": debug_str,
-            "LLM_EXPLANATION": llm_review,
-            "LLM_REVIEW_RESULT": extract_llm_reviewer_verdict(llm_review)
+            #"LLM_EXPLANATION": llm_review,
+            #"LLM_REVIEW_RESULT": extract_llm_reviewer_verdict(llm_review)
         })
 
     return results
