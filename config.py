@@ -70,6 +70,15 @@ class G4Config:
     )
     MANDATORY_WORD_REGEX = r"\bshall\b"
 
+    CONDITION_WORDS = ["if", "when", "after", "within"]
+
+    NUMBER_PATTERN = r"\d+"
+
+    UNIT_PATTERN = (
+        r"\b(ms|µs|us|sec|seconds|%|hz|khz|mhz|rpm|v|a|°c|bytes|"
+        r"0x[0-9a-fA-F]+)\b"
+    )
+
     REGISTER_KEYWORDS = ["register", "address", "bit", "offset"]
     COMMUNICATION_KEYWORDS = ["can", "uart", "spi", "i2c", "ethernet"]
     FAULT_KEYWORDS = ["fault", "error", "failure", "detect"]

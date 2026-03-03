@@ -48,7 +48,7 @@ def extract_docx_text(path):
 
 
 # ============================================================
-# G4 EXTRACTORS (UNCHANGED)
+# G4 EXTRACTORS
 # ============================================================
 
 def extract_from_docx(file_path):
