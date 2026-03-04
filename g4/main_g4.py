@@ -1,4 +1,7 @@
+# main_g4.py
+
 import os
+from pathlib import Path
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment
 from openpyxl.utils import get_column_letter
@@ -6,19 +9,24 @@ from openpyxl.utils import get_column_letter
 import io_utils
 import g4.g4_logic
 
+
 # ================= PATHS =================
 def run_g4():
-    INPUT_DIR = r"C:\Users\shrs\PycharmProjects\Demo\Review_Framework\Review_Framework\inputs"
-    OUTPUT_DIR = r"C:\Users\shrs\PycharmProjects\Demo\Review_Framework\Review_Framework\outputs"
-    OUTPUT_FILE = os.path.join(OUTPUT_DIR, "CI_G4_output.xlsx")
 
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    # Get project root dynamically (Review_Framework folder)
+    PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+    INPUT_DIR = PROJECT_ROOT / "inputs"
+    OUTPUT_DIR = PROJECT_ROOT / "outputs"
+    OUTPUT_FILE = OUTPUT_DIR / "CI_G4_output.xlsx"
+
+    # Create outputs folder if not exists
+    OUTPUT_DIR.mkdir(exist_ok=True)
+
     # ================= READ INPUTS =================
-
-    all_requirements = io_utils.collect_requirements(INPUT_DIR)
+    all_requirements = io_utils.collect_requirements(str(INPUT_DIR))
 
     # ================= EXCEL OUTPUT =================
-
     wb = Workbook()
     ws = wb.active
     ws.title = "HLR's are verifiable"
@@ -54,8 +62,7 @@ def run_g4():
 
     ws.freeze_panes = "A3"
 
-    # ================ DATA =================
-
+    # ================= DATA =================
     for rid, rtxt in all_requirements:
 
         g42_result, g42_reason = g4.g4_logic.check_g42_acceptance_criteria(rtxt)
@@ -75,18 +82,15 @@ def run_g4():
         ])
 
     # ================= ALIGNMENT =================
-
     for row in ws.iter_rows(min_row=3, max_row=ws.max_row):
-
         for cell in row:
             if cell.column == 1:
-                # ✅ Req ID LEFT aligned
+                # Req ID LEFT aligned
                 cell.alignment = Alignment(horizontal="left", vertical="center")
             else:
                 cell.alignment = Alignment(wrap_text=True, vertical="top")
 
     # ================= AUTO COLUMN WIDTH =================
-
     for col in ws.columns:
         max_len = 0
         column_letter = get_column_letter(col[0].column)
@@ -98,8 +102,11 @@ def run_g4():
         ws.column_dimensions[column_letter].width = min(max_len + 2, 60)
 
     # ================= SAVE FILE =================
-
-    wb.save(OUTPUT_FILE)
+    wb.save(str(OUTPUT_FILE))
 
     print("\n✅ G4 review completed successfully")
     print("📄 Output:", OUTPUT_FILE)
+
+
+if __name__ == "__main__":
+    run_g4()
