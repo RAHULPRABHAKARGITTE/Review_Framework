@@ -1,16 +1,4 @@
-# from config import (
-# TIMING_TERMS,
-# THROUGHPUT_TERMS,
-# RESOURCE_TERMS,
-# VAGUE_TERMS,
-# TIME_PATTERN,
-# RATE_PATTERN,
-# PERIODICITY_PATTERN,
-# VAGUE_RATE_PATTERN,
-# CYCLES_PATTERN,
-# RESOURCE_PATTERN,
-# EXCLUDED_WORDS
-# )
+
 from config import G2Config
 from collections import defaultdict
 from collections import Counter

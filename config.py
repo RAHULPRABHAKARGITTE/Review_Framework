@@ -2,6 +2,7 @@ import re
 import os
 import pandas as pd
 from docx import Document
+from pathlib import Path
 
 # =========================================================
 # SHARED REGEX
@@ -21,6 +22,7 @@ class CommonConfig:
     HLR_FILE          = "high_level_requirements.docx"
     HARDWARE_DS_FILE  = "hardware_datasheet.docx"
 
+
     DEFAULT_CPU_MHZ   = 100
     DEFAULT_RAM_KB    = 128
     DEFAULT_FLASH_KB  = 512
@@ -32,6 +34,12 @@ class G2Config:
     # -----------------------------
     # GLOBAL ICD MACROS
     # -----------------------------
+    BASE_DIR = Path(__file__).resolve().parent  # Review_Framework
+    INPUT_DIR = BASE_DIR / "inputs"
+    OUTPUT_DIR = BASE_DIR / "outputs"
+    G2_SRS      = str(INPUT_DIR /"SW-SR-0001_Updated_3.docx" )
+    ICD         = str(INPUT_DIR /"G2_SCU_ICD.docx")
+    G2_OUTPUT   = os.path.join(str(OUTPUT_DIR/"G2_Result.xlsx"))
 
     # ************ G2.2 : Start ************
 
@@ -381,6 +389,7 @@ class G2Config:
     G2_6_SRS_ID_PATTERN = r"\bSCU_[A-Z0-9_]+_\d+\b"
 
     # ************ G2.6 : End *************
+
 # =========================================================
 # G3 CONFIG
 # =========================================================

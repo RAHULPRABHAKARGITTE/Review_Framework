@@ -5,10 +5,53 @@ from g2.g2_3_logic import read_icd, check_g2_3_and_generate_excel
 from g2.g2_5_logic import analyze_requirement_g2_5
 from g2.g2_6_logic import check_g2_6_and_generate_excel
 from io_utils import G2_IOUtils
+from config import G2Config,CommonConfig
+
+def combine_g2_excels(output_dir):
+    """
+    Combine all individual G2 Excel outputs into
+    one single Excel file with multiple sheets.
+
+    Output:
+        G2_Result.xlsx
+            - Sheet: G2_2
+            - Sheet: G2_3
+            - Sheet: G2_5
+            - Sheet: G2_6
+    """
+
+    #g2_output_path = os.path.join(output_dir, "G2_Result.xlsx")
+
+    # File paths (must match your existing filenames)
+    file_map = {
+        "G2_2": "G2_2_Consistency.xlsx",
+        "G2_3": "G2_3_Terminology_and_Units.xlsx",
+        "G2_5": "G2_5_Performance_Constraints.xlsx",
+        "G2_6": "G2_6_Findings.xlsx"
+    }
+
+    with pd.ExcelWriter(str(G2Config.G2_OUTPUT), engine="openpyxl") as writer:
+
+        for sheet_name, file_name in file_map.items():
+            file_path = os.path.join(output_dir, file_name)
+
+            if os.path.exists(file_path):
+                df = pd.read_excel(file_path)
+                df.to_excel(writer, sheet_name=sheet_name, index=False)
+            else:
+                # If file not found, create empty placeholder sheet
+                empty_df = pd.DataFrame({
+                    "Info": [f"{file_name} not found"]
+                })
+                empty_df.to_excel(writer, sheet_name=sheet_name, index=False)
+
+    print(f"\n✅ Combined Excel created at:\n{str(G2Config.G2_OUTPUT)}")
+
+    return str(G2Config.G2_OUTPUT)
 
 def G2_2_logic():
-    srs_path_g2_2 = r"D:\Bhagyasri\SRS_Review_Tool\Trying_out\SW-SR-0001_Updated_3.docx"
-    G2_2_output_folder = r"C:\Users\pbhagyasri\PycharmProjects\Review_Framework\outputs"
+    srs_path_g2_2 = str( G2Config.G2_SRS)
+    G2_2_output_folder = str( G2Config.OUTPUT_DIR)
 
     # Step 1: Run G2.2
     excel_path_g2_2 = check_g2_2_and_generate_excel(srs_path_g2_2, G2_2_output_folder)
@@ -17,9 +60,9 @@ def G2_2_logic():
     print("Excel generated at:", excel_path_g2_2)
 
 def G2_3_logic():
-    srs_path = r"D:\Bhagyasri\SRS_Review_Tool\Trying_out\SW-SR-0001_Updated_3.docx"
-    icd_path = r"D:\Bhagyasri\SRS_Review_Tool\Trying_out\SCU_ICD.docx"
-    G2_3_output_folder = r"C:\Users\pbhagyasri\PycharmProjects\Review_Framework\outputs"
+    srs_path = str( G2Config.G2_SRS)
+    icd_path = str( G2Config.ICD)
+    G2_3_output_folder = str( G2Config.OUTPUT_DIR)
 
     # Step 1: Read ICD
     read_icd(icd_path)
@@ -86,8 +129,8 @@ def G2_5_logic(srs_path, datasheet_path, output_folder):
     return df, output_path
 
 def G2_6_logic():
-    srs_path = r"D:\Bhagyasri\SRS_Review_Tool\Trying_out\SCU_SRS.docx"
-    g2_6_output_dir = r"C:\Users\pbhagyasri\PycharmProjects\Review_Framework\outputs"
+    srs_path = str( G2Config.G2_SRS)
+    g2_6_output_dir = str(G2Config.OUTPUT_DIR)
 
     excel_path, df = check_g2_6_and_generate_excel(srs_path, g2_6_output_dir)
 
@@ -106,7 +149,9 @@ def G2_logic():
     G2_3_logic()
 
     #To check G2.5 Sub Point:
-    G2_5_logic("D:\Bhagyasri\SRS_Review_Tool\Trying_out\SW-SR-0001_Updated_3.docx" , "D:\Bhagyasri\SRS_Review_Tool\Trying_out\tms320f2812_data_sheet.pdf",r"D:\Bhagyasri\SRS_Review_Tool\Trying_out\G2_5")
+    G2_5_logic(str(G2Config.G2_SRS) , str(CommonConfig.HARDWARE_DS_FILE),str(G2Config.OUTPUT_DIR))
 
     # To check G2.6 Sub Point:
     G2_6_logic()
+
+    combine_g2_excels(str(G2Config.OUTPUT_DIR))

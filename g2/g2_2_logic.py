@@ -5,25 +5,6 @@ import os
 from collections import defaultdict, Counter
 from io_utils import G2_IOUtils
 
-#from config import (
-#     AMBIGUOUS_TERMS,
-#     NEGATION_PHRASES,
-#     AFFIRMATION_PHRASES,
-#     PARAMETER_KEYWORDS,
-#     NUMBER_UNIT_PATTERN,
-#     COMPARATOR_PATTERN,
-#     CYCLES_PATTERN,s
-#     INFO_ONLY_VERBS,
-    # has_whole_term,
-    # has_numeric_constraint,
-    # detect_polarity,
-    # extract_actions,
-    # extract_parameters,
-#    extract_thresholds,
-#   _has_info_only_nature,
-#     is_informational_only,
-#     extract_conditions
-#)
 from config import G2Config
 
 # ------------------------------------------------------------------------------
