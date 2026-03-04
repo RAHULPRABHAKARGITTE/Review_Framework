@@ -1,4 +1,5 @@
 from g1.main_g1 import run_g1
+from g2.main_g2 import run_g2
 from g3.main_g3 import run_g3
 from g4.main_g4 import run_g4
 from g5.main_g5 import run_g5
@@ -9,6 +10,9 @@ def main():
 
     run_g1()
     print("G1 review completed.\n")
+
+    run_g2()
+    print("G2 review completed.\n")
 
     run_g3()
     print("G3 review completed.\n")

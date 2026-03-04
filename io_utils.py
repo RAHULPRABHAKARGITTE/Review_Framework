@@ -2,7 +2,7 @@ import os
 import re
 from docx import Document
 from openpyxl import load_workbook
-from config import G4Config,LABEL_RE,REQ_ID_RE
+from config import G4Config,LABEL_RE,REQ_ID_RE,G2Config
 
 
 # ============================================================
@@ -494,3 +494,122 @@ class G1_3_4IOUtils:
             m for m in LABEL_RE.findall(text or "")
             if m.isdigit() and 0 < int(m) <= 377
         }
+
+# --- keep your existing imports at the top of io_utils.py ---
+# import os, re, from docx import Document, etc.
+
+class G2_IOUtils:
+    # Accept both SCU_STC_SRS_1234 and MRJ_XXXX formats
+    REQ_ID_REGEX = re.compile(
+        r"(SCU[_\-\s]?STC[_\-\s]?SRS[_\-\s]?\d+|MRJ_[A-Z0-9_]+)",
+        re.IGNORECASE
+    )
+    LOGICAL_KEYWORDS = ("IF", "THEN", "ELSE", "ENDIF", "WHERE")
+
+    @classmethod
+    def read_srs_requirements(cls, srs_path, mode="AUTO"):
+        """
+        mode:
+          TABLE     - read only table-based requirements
+          PARAGRAPH - read only paragraph-based requirements
+          LOGICAL   - read only logical (IF/THEN/ELSE) requirements
+          AUTO      - read ALL (recommended)
+        """
+        doc = Document(srs_path)
+        requirements = {}  # {req_id: full_text}
+
+        if mode in ("AUTO", "TABLE"):
+            cls._read_table_requirements(doc, requirements)
+        if mode in ("AUTO", "PARAGRAPH"):
+            cls._read_paragraph_requirements(doc, requirements)
+        if mode in ("AUTO", "LOGICAL"):
+            cls._read_logical_requirements(doc, requirements)
+
+        # Final cleanup
+        for rid in requirements:
+            requirements[rid] = requirements[rid].strip()
+        return requirements
+
+    @classmethod
+    def _read_table_requirements(cls, doc, requirements):
+        for table in doc.tables:
+            for row in table.rows:
+                cells = [c.text.strip() for c in row.cells if c.text.strip()]
+                if not cells:
+                    continue
+                match = cls.REQ_ID_REGEX.search(cells[0])
+                if match:
+                    rid = match.group(1)
+                    desc = " ".join(cells[1:]) if len(cells) > 1 else ""
+                    if rid not in requirements:
+                        requirements[rid] = desc
+                    else:
+                        requirements[rid] += " " + desc
+
+    @classmethod
+    def _read_paragraph_requirements(cls, doc, requirements):
+        current_id = None
+        buffer = []
+        for para in doc.paragraphs:
+            text = para.text.strip()
+            if not text:
+                continue
+
+            match = cls.REQ_ID_REGEX.match(text)
+            if match:
+                if current_id and buffer:
+                    cls._store_requirement(requirements, current_id, buffer)
+                current_id = match.group(1)
+                buffer = [text]
+            else:
+                if current_id:
+                    buffer.append(text)
+
+        if current_id and buffer:
+            cls._store_requirement(requirements, current_id, buffer)
+
+    @classmethod
+    def _read_logical_requirements(cls, doc, requirements):
+        current_id = None
+        buffer = []
+        in_logic = False
+
+        for para in doc.paragraphs:
+            text = para.text.strip()
+            if not text:
+                continue
+
+            id_match = cls.REQ_ID_REGEX.match(text)
+            if id_match:
+                if current_id and buffer:
+                    cls._store_requirement(requirements, current_id, buffer)
+                current_id = id_match.group(1)
+                buffer = [text]
+                in_logic = False
+                continue
+
+            if any(k in text.upper() for k in cls.LOGICAL_KEYWORDS):
+                in_logic = True
+
+            if current_id and in_logic:
+                buffer.append(text)
+
+            if "ENDIF" in text.upper():
+                in_logic = False
+                if current_id and buffer:
+                    cls._store_requirement(requirements, current_id, buffer)
+
+    @classmethod
+    def _store_requirement(cls, requirements, req_id, text_buffer):
+        combined = " ".join(text_buffer).strip()
+        if req_id not in requirements:
+            requirements[req_id] = combined
+        else:
+            # Merge without duplication
+            if combined not in requirements[req_id]:
+                requirements[req_id] += " " + combined
+
+
+# Public wrapper so that: from io_utils import read_srs_requirements
+def read_srs_requirements(srs_path: str, mode: str = "AUTO"):
+    return G2_IOUtils.read_srs_requirements(srs_path, mode)
