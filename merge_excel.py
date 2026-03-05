@@ -24,7 +24,8 @@ import os
 import g1.excel_utils as xu  # <-- uses format_excel_sheet(writer_like, sheet_name)
 
 # ---------------- SETTINGS ----------------
-SOURCE_DIR = Path(r"C:\Users\traviprakash\Documents\Tool_development\Review_Framework\outputs")
+base_dir = Path(__file__).resolve().parent
+SOURCE_DIR = base_dir / "outputs"
 MASTER_XLSX = SOURCE_DIR / "All_In_One.xlsx"
 TEMP_XLSX = SOURCE_DIR / "~All_In_One.tmp.xlsx"
 
