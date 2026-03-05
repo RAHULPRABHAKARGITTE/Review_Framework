@@ -4,6 +4,7 @@ from g3.main_g3 import run_g3
 from g4.main_g4 import run_g4
 from g5.main_g5 import run_g5
 from g7.main_G7 import main as run_g7
+from  merge_excel import merge_excel_files
 
 def main():
     print("Starting Review Framework...")
@@ -25,6 +26,8 @@ def main():
 
     run_g7()
     print("G7 review completed.\n")
+
+    merge_excel_files()
 
 
 if __name__ == "__main__":

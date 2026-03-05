@@ -148,7 +148,7 @@ def load_standards():
 def generate_excel_report(all_req_ids, findings_by_req, output_path, guidelines, keywords, params):
     wb = Workbook()
     ws = wb.active
-    ws.title = "SRS Review"
+    ws.title = "CONFORMS_TO_STD"
 
     ws.merge_cells(start_row=1, start_column=1,
                    end_row=1, end_column=len(G5Config.COLUMN_HEADERS))
@@ -229,7 +229,7 @@ def run_g5():
     srs_path = base_dir / "inputs" / params["input_srs_file"]
     output_dir = base_dir / "outputs"
     output_dir.mkdir(exist_ok=True)
-    output_path = output_dir / params["output_report_file"]
+    output_path = output_dir / G5Config.OUTPUT_REPORT_FILE
 
     # Extract requirements from the SRS file
     requirements = _extract_requirements_from_docx(srs_path)

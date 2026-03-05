@@ -891,7 +891,7 @@ class G5Config:
     # Project / Document Info
     # =========================
     INPUT_SRS_FILE = "SCU_SRS_g5.docx"
-    OUTPUT_REPORT_FILE = "SRS_Review_Report.xlsx"
+    OUTPUT_REPORT_FILE = "G5_Report.xlsx"
     STANDARDS_FILE = "SRS_standards.docx"
 
     # =========================
