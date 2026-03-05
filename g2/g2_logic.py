@@ -6,6 +6,13 @@ from g2.g2_5_logic import analyze_requirement_g2_5
 from g2.g2_6_logic import check_g2_6_and_generate_excel
 from io_utils import G2_IOUtils
 from config import G2Config,CommonConfig
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment
+from openpyxl.cell import MergedCell
+import io_utils
+import g2.g2_4_7_logic
+from pathlib import Path
+
 
 def combine_g2_excels(output_dir):
     """
@@ -140,6 +147,101 @@ def G2_6_logic():
         print("G2.6 FAIL – Findings detected.")
         print("Report generated at:", excel_path)
 
+def run_g2_4_7():
+    # ===== PATHS =====
+    # Get project root dynamically (Review_Framework folder)
+    PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+    INPUT_DIR = PROJECT_ROOT / "inputs"
+    OUTPUT_DIR = PROJECT_ROOT / "outputs"
+    OUTPUT_FILE = OUTPUT_DIR / "CI_G2_4_7_output.xlsx"
+
+    # Create outputs folder if not exists
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    # ================= READ INPUTS =================
+    # Expecting collect_requirements(...) -> List[Tuple[req_id, text]] or similar
+    collected = io_utils.collect_requirements(str(INPUT_DIR))
+
+    # Normalize to a list of (rid, text). If collect_requirements returned raw text, use extractor.
+    if isinstance(collected, str):
+        # collected is a single blob of text
+        requirements = g2.g2_4_7_logic.extract_requirements(collected)
+    else:
+        # Assume already in [(rid, text), ...] form; if it's dict, convert to tuples
+        if isinstance(collected, dict):
+            requirements = list(collected.items())
+        else:
+            requirements = collected
+
+    # ===== CREATE EXCEL =====
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Requirement Quality"
+
+    # Title
+    ws.merge_cells("A1:F1")
+    ws["A1"] = "High-Level requirements are accurate and consistent"
+    ws["A1"].font = Font(bold=True)
+    ws["A1"].alignment = Alignment(horizontal="center")
+
+    # ===== UPDATED HEADER ORDER =====
+    headers = [
+        "Requirement ID",
+        "G 2.4.1:Derived Requirement",
+        "G 2.4.2:Derived Req Justified",
+        "G 2.4.3:Justification Appropriate",
+        "G 2.7.1:Sufficiently Detailed",
+        "G 2.7.2:Review Reason"
+    ]
+
+    ws.append(headers)
+
+    for col in range(1, len(headers) + 1):
+        ws.cell(row=2, column=col).font = Font(bold=True)
+
+    # ===== Populate rows with UPDATED order =====
+    for rid, text in requirements:
+        detail_status, detail_reason = g2.g2_4_7_logic.check_sufficient_detail(text)
+        derived_status, justified_status, justification_quality = \
+            g2.g2_4_7_logic.check_derived_requirement(text)
+
+        ws.append([
+            rid,
+            derived_status,
+            justified_status,
+            justification_quality,
+            detail_status,
+            detail_reason
+        ])
+
+    # ===== Filter =====
+    ws.auto_filter.ref = f"A2:F{ws.max_row}"
+
+    # ===== Auto width safe =====
+    for col in ws.columns:
+        max_length = 0
+        column_letter = None
+
+        for cell in col:
+            if isinstance(cell, MergedCell):
+                continue
+
+            if column_letter is None:
+                column_letter = cell.column_letter
+
+            if cell.value:
+                max_length = max(max_length, len(str(cell.value)))
+
+        if column_letter:
+            ws.column_dimensions[column_letter].width = max_length + 3
+
+    wb.save(OUTPUT_FILE)
+
+    print("G2.4.7: ✅ Derived + Justification Quality verification completed")
+    print(f"📄 Output saved at: {OUTPUT_FILE}")
+
+
 def G2_logic():
 
     # To check G2.2 Sub Point:
@@ -154,4 +256,8 @@ def G2_logic():
     # To check G2.6 Sub Point:
     G2_6_logic()
 
+    run_g2_4_7()
+
     combine_g2_excels(str(G2Config.OUTPUT_DIR))
+
+

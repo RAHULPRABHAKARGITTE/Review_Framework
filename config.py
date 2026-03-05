@@ -1,7 +1,5 @@
 import re
 import os
-import pandas as pd
-from docx import Document
 from pathlib import Path
 
 # =========================================================
@@ -389,6 +387,55 @@ class G2Config:
     G2_6_SRS_ID_PATTERN = r"\bSCU_[A-Z0-9_]+_\d+\b"
 
     # ************ G2.6 : End *************
+
+    # ************ G2.4,7 : Start *************
+
+    # ===== Requirement ID Pattern =====
+    REQ_ID_PATTERN = r"\b((?:SCU_STC_SRS_|MRJ_SCU_STC_SRS_)\d+)\b"
+
+    # ===== Derived Object Type Keywords =====
+    DERIVED_KEYWORDS = [
+        "derived",
+        "derived requirement",
+        "dr_",
+        "der_",
+        "d_"
+    ]
+
+    # ===== Justification Synonyms =====
+    JUSTIFICATION_WORDS = [
+        "justification",
+        "reason",
+        "defense",
+        "vindication",
+        "rationale",
+        "grounds",
+        "warrant",
+        "foundation",
+        "exoneration",
+        "exculpation"
+    ]
+
+    # ===== Justification Quality Indicators =====
+    JUSTIFICATION_REASONING_WORDS = [
+        "because",
+        "required",
+        "needed",
+        "to ensure",
+        "to prevent",
+        "to achieve",
+        "due to",
+        "indicates"
+    ]
+
+    # ===== Detail Check Keywords =====
+    MANDATORY_WORDS = ["shall", "must"]
+    CONDITION_WORDS = ["if", "when", "within", "after"]
+
+    G2_4_7_UNIT_PATTERN = r"\b(ms|µs|us|sec|seconds|%|hz|rpm|v|a|°c|bytes|0x[0-9a-fA-F]+)\b"
+    NUMBER_PATTERN = r"\d+"
+
+    # ************ G2.4,7 : Start *************
 
 # =========================================================
 # G3 CONFIG
