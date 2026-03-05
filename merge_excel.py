@@ -179,6 +179,53 @@ def merge_excel_files():
 
         family_buckets[fam].append(p)
 
+    VERBOSE = True  # Set to False after debugging
+
+    # 1) Collect files
+    family_buckets = {f: [] for f in FAMILY_ORDER}
+    explicit_files = []
+
+    print(f"SCAN DIR : {SOURCE_DIR}") if VERBOSE else None
+
+    for p in SOURCE_DIR.iterdir():
+        # --- extension filter ---
+        if p.suffix.lower() not in (".xlsx", ".xlsm"):
+            if VERBOSE: print(f"skip(not excel): {p.name}")
+            continue
+
+        # --- Excel lock files ---
+        if p.name.startswith("~$"):
+            if VERBOSE: print(f"skip(lock file): {p.name}")
+            continue
+
+        # --- skip self outputs ---
+        if p.resolve() == MASTER_XLSX.resolve():
+            if VERBOSE: print(f"skip(master): {p.name}")
+            continue
+        if p.resolve() == TEMP_XLSX.resolve():
+            if VERBOSE: print(f"skip(temp): {p.name}")
+            continue
+
+        # --- explicit include by stem ---
+        if is_explicit_include(p):
+            if VERBOSE: print(f"include(explicit): {p.name}")
+            explicit_files.append(p)
+            continue
+
+        # --- family detection ---
+        fam = get_family(p.stem)
+        if not fam:
+            if VERBOSE: print(f"skip(no family): {p.name}")
+            continue
+
+        # --- G2 whitelist ---
+        if fam == "G2" and not is_g2_allowed(p.stem):
+            if VERBOSE: print(f"skip(G2 not allowed): {p.name}")
+            continue
+
+        if VERBOSE: print(f"bucket[{fam}] <= {p.name}")
+        family_buckets[fam].append(p)
+
     # 2) Order: G1→G2→G3(newest only)→G4→G5→G7 → then explicit includes
     ordered = []
     for fam in FAMILY_ORDER:
