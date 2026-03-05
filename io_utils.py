@@ -2,7 +2,7 @@ import os
 import re
 from docx import Document
 from openpyxl import load_workbook
-from config import G4Config,LABEL_RE,REQ_ID_RE,G2Config
+from config import G4Config,LABEL_RE,REQ_ID_RE
 
 
 # ============================================================
@@ -196,13 +196,13 @@ def _extract_requirements_from_docx(docx_path):
             if raw_id and not VALID_ID_PATTERN.match(raw_id):
                 requirements.append({"id": None, "raw_id": raw_id, "text": text})
                 continue
-
-            match = VALID_ID_PATTERN.match(raw_id)
-            requirements.append({
-                "id": match.group(1),
-                "raw_id": raw_id,
-                "text": text
-            })
+            if raw_id:
+                match = VALID_ID_PATTERN.match(raw_id)
+                requirements.append({
+                    "id": match.group(1),
+                    "raw_id": raw_id,
+                    "text": text
+                })
 
     return requirements
 

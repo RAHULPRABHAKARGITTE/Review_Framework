@@ -835,14 +835,39 @@ class G1Config:
 # G5 CONFIG
 # =========================================================
 class G5Config:
-    INPUT_SRS_FILE = "SCU_SRS.docx"
-    OUTPUT_REPORT_FILE = "G5_SRS_Review.xlsx"
+    """
+    Central configuration file for SRS Review Tool
+    DO-178C compliant
+    """
 
+    # =========================
+    # Project / Document Info
+    # =========================
+    INPUT_SRS_FILE = "SCU_SRS_g5.docx"
+    OUTPUT_REPORT_FILE = "SRS_Review_Report.xlsx"
+    STANDARDS_FILE = "SRS_standards.docx"
+
+    # =========================
+    # Requirement ID Rules
+    # =========================
     EXPECTED_ID_PREFIX = "SCU_STC_SRS_"
+
     VALID_ID_REGEX = r"^SCU_STC_SRS_\d+$"
+
     MISSING_ID_LABEL = "<MISSING ID>"
 
-    # ---------- Safety ----------
+    # =========================
+    # Guideline Labels
+    # =========================
+    GUIDELINE_5_1 = "5.1"
+    GUIDELINE_5_2 = "5.2"
+    GUIDELINE_5_3 = "5.3"
+    GUIDELINE_5_4 = "5.4"
+    GUIDELINE_5_5 = "5.5"
+
+    # =========================
+    # Safety Keywords
+    # =========================
     SAFETY_KEYWORDS = [
         "fault", "failure", "fail", "error", "loss", "hazard",
         "degraded", "safe state", "shutdown", "reset", "timeout",
@@ -851,40 +876,53 @@ class G5Config:
     ]
 
     MITIGATION_KEYWORDS = [
-        "detect", "prevent", "mitigate", "isolate",
-        "monitor", "recover", "limit", "protect",
-        "shutdown", "transition"
+        "detect", "prevent", "mitigate", "isolate", "monitor",
+        "recover", "limit", "protect", "shutdown", "transition"
     ]
 
     FORBIDDEN_SAFETY_PHRASES = [
-        "best effort", "where possible",
-        "if feasible", "normally",
-        "typically", "as appropriate"
+        "best effort",
+        "where possible",
+        "if feasible",
+        "normally",
+        "typically",
+        "as appropriate"
     ]
 
     FORBIDDEN_MODALS = ["may", "should", "will"]
 
-    # ---------- Ambiguity ----------
+    # =========================
+    # Ambiguous Words
+    # =========================
     AMBIGUOUS_WORDS = [
-        "should", "may", "might", "could",
-        "normally", "typically",
-        "as appropriate", "where possible"
+        "should",
+        "may",
+        "might",
+        "could",
+        "normally",
+        "typically",
+        "as appropriate",
+        "where possible"
     ]
 
-    # ---------- Single Functionality ----------
-    MAX_SHALL_COUNT = 1   # ✅ THIS FIXES YOUR CRASH
+    # =========================
+    # Single Function Indicators
+    # =========================
+
+
+    MAX_SHALL_COUNT = 1
 
     STOP_WORDS = {
-        "SHALL", "WILL", "MAY", "PROGRAM", "SYSTEM",
-        "WHEN", "IF", "THEN", "AND", "OR", "NOT",
-        "ANY", "THE", "A", "AN", "LEVEL", "MODE",
-        "STATE", "STATUS", "FAILSAFE", "MONITOR",
-        "ACCORDING", "FOLLOWING", "CONFIRMATION",
-        "LOGIC", "TIME", "WITH", "STC"
+        "SHALL", "WILL", "MAY", "PROGRAM", "SYSTEM", "WHEN", "IF",
+        "THEN", "AND", "OR", "NOT", "ANY", "THE", "A", "AN",
+        "LEVEL", "MODE", "STATE", "STATUS", "FAILSAFE", "MONITOR",
+        "ACCORDING", "FOLLOWING", "CONFIRMATION", "LOGIC", "TIME", "WITH", "STC"
     }
 
-    # ---------- Excel ----------
-    REPORT_TITLE = "High-Level Requirements Conformance Review (G5)"
+    # =========================
+    # Excel Report Text
+    # =========================
+    REPORT_TITLE = "High-Level requirements are conforms to standards"
 
     COLUMN_HEADERS = [
         "Requirement ID",
@@ -895,6 +933,25 @@ class G5Config:
         "5.5: Check formatting & structure",
         "Failure Reason(s)"
     ]
+    SUBJECT_PREFIX = "the stc program shall"
+
+    FORBIDDEN_VAGUE = [
+        "etc",
+        "as appropriate",
+        "as required",
+        "as needed",
+        "adequate",
+        "sufficient"
+    ]
+
+    PASSIVE_PATTERNS = [
+        r"shall be provided",
+        r"shall be handled",
+        r"shall be performed",
+        r"shall be supported"
+    ]
+
+
 class G7Config:
     INPUT_SRS_FILE = "SCU_SRS.docx"
 

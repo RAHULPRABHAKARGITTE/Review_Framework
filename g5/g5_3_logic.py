@@ -1,52 +1,34 @@
 import re
 
-SUBJECT_PREFIX = "the stc program shall"
-
-FORBIDDEN_MODALS = ["must", "will", "should", "may"]
-FORBIDDEN_VAGUE = [
-    "etc", "as appropriate", "as required",
-    "as needed", "adequate", "sufficient"
-]
-
-PASSIVE_PATTERNS = [
-    r"shall be provided",
-    r"shall be handled",
-    r"shall be performed",
-    r"shall be supported"
-]
-
-
-def check_project_guidelines(requirements):
+def check_project_guidelines(requirements, keywords):
     findings = []
-
     for req in requirements:
         req_id = req.get("id")
         text = req.get("text", "").strip()
-
         if not req_id or not text:
             continue
 
-        t = text.lower()
+        text_lower = text.lower()
 
-        if "shall" not in t:
-            findings.append((req_id, "G_5.3-PG-01: Missing 'shall'"))
+        if "shall" not in text_lower:
+            findings.append((req_id, "G_5.3-PG-01: Requirement does not contain 'shall'"))
 
-        if t.count("shall") > 1:
-            findings.append((req_id, "G_5.3-PG-02: Multiple 'shall' statements"))
+        if text_lower.count("shall") > 1:
+            findings.append((req_id, "G_5.3-PG-02: Multiple 'shall' statements found"))
 
-        if not t.startswith(SUBJECT_PREFIX):
-            findings.append((req_id, "G_5.3-PG-03: Incorrect requirement subject"))
+        if not text_lower.startswith(keywords["subject_prefix"]):
+            findings.append((req_id, "G_5.3-PG-03: Requirement does not start with 'The STC Program shall'"))
 
-        for m in FORBIDDEN_MODALS:
-            if re.search(rf"\b{m}\b", t):
-                findings.append((req_id, f"G_5.3-PG-04: Forbidden modal '{m}'"))
+        for word in keywords["forbidden_modals"]:
+            if re.search(rf"\b{word}\b", text_lower):
+                findings.append((req_id, f"G_5.3-PG-04: Forbidden modal verb used ('{word}')"))
 
-        for v in FORBIDDEN_VAGUE:
-            if v in t:
-                findings.append((req_id, f"G_5.3-PG-05: Vague term '{v}'"))
+        for phrase in keywords["forbidden_vague"]:
+            if phrase in text_lower:
+                findings.append((req_id, f"G_5.3-PG-05: Forbidden vague term used ('{phrase}')"))
 
-        for p in PASSIVE_PATTERNS:
-            if re.search(p, t):
-                findings.append((req_id, "G_5.3-PG-06: Passive voice detected"))
+        for pattern in keywords["passive_patterns"]:
+            if re.search(pattern, text_lower):
+                findings.append((req_id, "G_5.3-PG-06: Possible passive voice usage"))
 
     return findings

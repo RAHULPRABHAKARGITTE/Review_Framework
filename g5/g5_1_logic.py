@@ -1,54 +1,32 @@
 import re
-from config import G5Config
 
+def is_safety_related(text_lower, keywords):
+    return any(keyword in text_lower for keyword in keywords["safety_keywords"])
 
-def is_safety_related(text_lower: str) -> bool:
-    return any(k in text_lower for k in G5Config.SAFETY_KEYWORDS)
-
-
-def check_safety(requirements):
+def check_safety(requirements, keywords):
     findings = []
-
     for req in requirements:
         req_id = req.get("id")
         text = req.get("text", "").strip()
-
         if not req_id or not text:
             continue
 
         text_lower = text.lower()
-
-        if not is_safety_related(text_lower):
+        if not is_safety_related(text_lower, keywords):
             continue
 
-        # SR-01: mitigation missing
-        if not any(k in text_lower for k in G5Config.MITIGATION_KEYWORDS):
-            findings.append((
-                req_id,
-                "G_5.1-SR-01: Safety requirement lacks mitigation action"
-            ))
+        if not any(word in text_lower for word in keywords["mitigation_keywords"]):
+            findings.append((req_id, "G_5.1-SR-01: No mitigation action found."))
 
-        # SR-02: missing system behavior
         if not re.search(r"\bshall\s+\w+", text_lower):
-            findings.append((
-                req_id,
-                "G_5.1-SR-02: Missing 'shall <action>' system behavior"
-            ))
+            findings.append((req_id, "G_5.1-SR-02: Missing system behavior."))
 
-        # SR-03: vague phrases
-        for phrase in G5Config.FORBIDDEN_SAFETY_PHRASES:
+        for phrase in keywords["forbidden_vague"]:
             if phrase in text_lower:
-                findings.append((
-                    req_id,
-                    f"G_5.1-SR-03: Vague safety wording ('{phrase}')"
-                ))
+                findings.append((req_id, f"G_5.1-SR-03: Vague safety wording detected ('{phrase}')"))
 
-        # SR-04: forbidden modals
-        for modal in G5Config.FORBIDDEN_MODALS:
+        for modal in keywords["forbidden_modals"]:
             if re.search(rf"\b{modal}\b", text_lower):
-                findings.append((
-                    req_id,
-                    f"G_5.1-SR-04: Forbidden modal verb used ('{modal}')"
-                ))
+                findings.append((req_id, f"G_5.1-SR-04: Weak modal verb used ('{modal}')"))
 
     return findings
